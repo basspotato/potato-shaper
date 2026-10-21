@@ -192,7 +192,7 @@ namespace ps
                 for (int k = 0; k < nb; ++k)
                 {
                     const float m = mask[ch][(size_t) k] * band[(size_t) k], sm = smask[ch][(size_t) k] * band[(size_t) k];
-                    float gdb = juce::jlimit (-36.0f, 30.0f, amt * (m * p.transDb + sm * p.susDb));
+                    float gdb = juce::jlimit (-36.0f, 30.0f, amt * (m * p.transDb[ch] + sm * p.susDb[ch]));
                     float g;
                     switch (p.listen)
                     {
@@ -208,8 +208,8 @@ namespace ps
 
                     const float wk = mag[(size_t) k];
                     sumM += m * wk; sumS += sm * wk; wSum += wk;
-                    peakTransDb = std::abs (amt * m * p.transDb) > std::abs (peakTransDb) ? amt * m * p.transDb : peakTransDb;
-                    peakSusDb   = std::abs (amt * sm * p.susDb)  > std::abs (peakSusDb)   ? amt * sm * p.susDb   : peakSusDb;
+                    peakTransDb = std::abs (amt * m * p.transDb[ch]) > std::abs (peakTransDb) ? amt * m * p.transDb[ch] : peakTransDb;
+                    peakSusDb   = std::abs (amt * sm * p.susDb[ch])  > std::abs (peakSusDb)   ? amt * sm * p.susDb[ch]   : peakSusDb;
 
                     const double f = (double) k * sr / n;
                     if (f >= 20.0 && f <= 20000.0)

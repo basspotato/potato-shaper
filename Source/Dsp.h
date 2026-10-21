@@ -211,7 +211,8 @@ namespace ps
     // Everything the engines need from the parameters, read once per block
     struct EngineParams
     {
-        float transDb = 0, susDb = 0, timeMs = 20, warmth = 0;
+        float transDb[2] = {}, susDb[2] = {};   // per channel: L/R share one setting; in M/S, channel 0 = mid and 1 = side
+        float timeMs = 20, warmth = 0;
         FocusSettings focus;
         bool focusProc = true;
         float link = 1, balance = 0;           // balance -1..1

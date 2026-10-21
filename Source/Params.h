@@ -9,6 +9,8 @@ namespace ps
         inline constexpr const char* mode      = "mode";       // Clean / Spectral
         inline constexpr const char* trans     = "trans";
         inline constexpr const char* sus       = "sus";
+        inline constexpr const char* transSide = "transside";  // M/S mode: the Side channel's own Transient and Sustain
+        inline constexpr const char* susSide   = "susside";
         inline constexpr const char* time      = "time";
         inline constexpr const char* warmth    = "warmth";
         inline constexpr const char* loCut     = "locut";
@@ -69,7 +71,7 @@ namespace ps
 
     inline juce::String formatValue (const juce::String& pid, float v)
     {
-        if (pid == id::trans || pid == id::sus || pid == id::makeup || pid == id::scGain
+        if (pid == id::trans || pid == id::sus || pid == id::transSide || pid == id::susSide || pid == id::makeup || pid == id::scGain
             || pid == id::lowG || pid == id::midG || pid == id::highG) return fmtDb (v);
         if (pid == id::time)   return v < 10.0f ? juce::String (v, 1) + " ms" : juce::String (juce::roundToInt (v)) + " ms";
         if (pid == id::warmth || pid == id::mix || pid == id::link) return juce::String (juce::roundToInt (v)) + " %";
@@ -106,6 +108,8 @@ namespace ps
         choice (id::mode, "Mode", modeNames, 0);
         fl (id::trans,  "Transient", { -24.0f, 24.0f, 0.01f }, 0.0f, "dB");
         fl (id::sus,    "Sustain",   { -24.0f, 24.0f, 0.01f }, 0.0f, "dB");
+        fl (id::transSide, "Side Transient", { -24.0f, 24.0f, 0.01f }, 0.0f, "dB");
+        fl (id::susSide,   "Side Sustain",   { -24.0f, 24.0f, 0.01f }, 0.0f, "dB");
         fl (id::time,   "Time",      logRange (2.0f, 200.0f), 20.0f, "ms");
         fl (id::warmth, "Warmth",    { 0.0f, 100.0f, 0.1f }, 0.0f, "%");
 

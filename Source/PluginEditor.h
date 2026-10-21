@@ -14,6 +14,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    void selectMsTab (int tab);    // M/S mode: Transient and Sustain knobs edit Mid (0) or Side (1); used for GUI snapshots
     void selectBand (int index);   // opens the band box for low (1), mid (2) or high (3); used for GUI snapshots
 
     static constexpr int panelW = 1200, panelH = 760;

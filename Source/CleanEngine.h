@@ -69,10 +69,10 @@ namespace ps
                     mSum += m; sSum += s;
 
                     const float amt = numCh > 1 ? balanceAmount (p.balance, ch) : 1.0f;
-                    const float target = amt * (m * p.transDb + s * p.susDb);
+                    const float target = amt * (m * p.transDb[ch] + s * p.susDb[ch]);
                     gainDb[ch] = target + aGain * (gainDb[ch] - target);
-                    peakTransDb = std::abs (amt * m * p.transDb) > std::abs (peakTransDb) ? amt * m * p.transDb : peakTransDb;
-                    peakSusDb   = std::abs (amt * s * p.susDb)   > std::abs (peakSusDb)   ? amt * s * p.susDb   : peakSusDb;
+                    peakTransDb = std::abs (amt * m * p.transDb[ch]) > std::abs (peakTransDb) ? amt * m * p.transDb[ch] : peakTransDb;
+                    peakSusDb   = std::abs (amt * s * p.susDb[ch])   > std::abs (peakSusDb)   ? amt * s * p.susDb[ch]   : peakSusDb;
 
                     const float x = io[ch][i];
                     float b = x;

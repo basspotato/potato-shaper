@@ -13,7 +13,7 @@ Detection is level independent, so there is no threshold. Turning the track up o
 
 | Control | What it does |
 | --- | --- |
-| Transient | Gain of the detected attacks (±24 dB). |
+| Transient | Gain of the detected attacks (±24 dB). In M/S mode, the MID and SIDE tabs above the Transient and Sustain knobs choose which channel the two knobs edit, so the Mid and Side get their own settings. |
 | Sustain | Gain of the detected tails (±24 dB). |
 | Time | Length of the transient region (2 to 200 ms). A longer Time also starts the sustain later. |
 | Warmth | Saturation applied to the transients only. |

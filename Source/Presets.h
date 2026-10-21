@@ -4,7 +4,7 @@
 // 90 factory presets for EDM: 9 groups of 10. Side-chain source, side-chain gain and bypass are left as they are; Listen goes back to OUT.
 // Starting points (from common EDM practice): drums get +3..+8 dB attack with sustain cut, sources keep body in their own band
 // via the Focus curve, mix and master work stay at +1..+3 dB in the Spectral engine, imaging uses M/S with Balance to pick the
-// channel (-100 = mid only, +100 = side only). Lo / hi cut slopes: steep (48) to keep bleed out of drums and subs,
+// channel (-100 = mid only, +100 = side only) or, better, set the Mid and Side separately. Lo / hi cut slopes: steep (48) to keep bleed out of drums and subs,
 // gentle (6 / 12) where the band edge should stay soft.
 namespace ps
 {
@@ -23,6 +23,7 @@ namespace ps
         bool clip = true;
         int os = 0, window = 1;
         float sharp = 5.0f;
+        float transSide = 0.0f, susSide = 0.0f;   // M/S only: the Side channel's own settings (trans / sus are the Mid's)
 
         constexpr explicit Preset (const char* n) : name (n) {}
 
@@ -36,6 +37,7 @@ namespace ps
         constexpr Preset mid (float f, float g, float q = 0.71f, int type = bandPeak) const   { auto p = *this; p.midF = f; p.midG = g; p.midQ = q; p.midType = type; return p; }
         constexpr Preset high (float f, float g, int type = bandHiShelf, float q = 0.71f) const { auto p = *this; p.highF = f; p.highG = g; p.highType = type; p.highQ = q; return p; }
         constexpr Preset ms (float bal, float lnk = 0.0f) const { auto p = *this; p.msMode = 1; p.balance = bal; p.link = lnk; return p; }
+        constexpr Preset side (float t, float s) const          { auto p = *this; p.transSide = t; p.susSide = s; return p; }
         constexpr Preset lr (float lnk) const                   { auto p = *this; p.link = lnk; return p; }
         constexpr Preset gain (float db) const                  { auto p = *this; p.makeup = db; return p; }
         constexpr Preset wet (float m) const                    { auto p = *this; p.mix = m; return p; }
@@ -133,17 +135,17 @@ namespace ps
         Preset ("Consonant Lift").ts (4.0f, 0.0f, 5.0f).high (5000, 4).spec (0, 6.0f).wet (50),
         Preset ("Vocal Bus Tight").ts (2.0f, -3.0f, 15.0f).warm (10).spec().wet (80),
 
-        // Imaging: M/S with unlinked detection; Balance picks mid (-100) or side (+100)
-        Preset ("Mid Punch").ts (4.0f, -2.0f, 12.0f).ms (-100.0f),
-        Preset ("Wide Tails").ts (0.0f, 4.0f, 25.0f).ms (100.0f),
-        Preset ("Wide Attack").ts (4.0f, 0.0f, 8.0f).ms (100.0f),
-        Preset ("Side Tame").ts (-3.0f, -3.0f, 10.0f).ms (100.0f),
-        Preset ("Center Focus").ts (3.0f, -3.0f, 15.0f).mid (1000, 3).ms (-100.0f),
-        Preset ("Ambience Push").ts (-2.0f, 6.0f, 40.0f).spec (2, 4.0f).ms (100.0f),
-        Preset ("Dry Sides").ts (0.0f, -6.0f, 20.0f).ms (100.0f),
+        // Imaging: M/S with unlinked detection. The first T / S pair is the Mid, .side() sets the Side
+        Preset ("Punch & Space").ts (4.0f, -2.0f, 12.0f).side (-3.0f, 2.0f).ms (0.0f),
+        Preset ("Wide Tails").ts (0.0f, 0.0f, 25.0f).side (0.0f, 4.0f).ms (0.0f),
+        Preset ("Wide Attack").ts (0.0f, 0.0f, 8.0f).side (4.0f, 0.0f).ms (0.0f),
+        Preset ("Side Tame").ts (0.0f, 0.0f, 10.0f).side (-3.0f, -3.0f).ms (0.0f),
+        Preset ("Center Focus").ts (3.0f, -3.0f, 15.0f).side (-2.0f, 0.0f).mid (1000, 3).ms (0.0f),
+        Preset ("Ambience Push").ts (0.0f, -2.0f, 40.0f).side (-2.0f, 6.0f).spec (2, 4.0f).ms (0.0f),
+        Preset ("Dry Sides").ts (2.0f, 0.0f, 20.0f).side (0.0f, -6.0f).ms (0.0f),
         Preset ("Free Stereo Hits").ts (4.0f, -2.0f, 10.0f).lr (0.0f),
-        Preset ("Mono Low Tight").ts (2.0f, -4.0f, 20.0f).low (80, 3).ms (-100.0f),
-        Preset ("Side Air Sparkle").ts (4.0f, 2.0f, 6.0f).cuts (2000, 20000).slopes (slope12, slope24).high (8000, 3).ms (100.0f),
+        Preset ("Mono Low Tight").ts (2.0f, -4.0f, 20.0f).side (-3.0f, -6.0f).low (80, 3).ms (0.0f),
+        Preset ("Side Air Sparkle").ts (1.0f, 0.0f, 6.0f).side (4.0f, 2.0f).cuts (2000, 20000).high (8000, 3).slopes (slope12, slope24).ms (0.0f),
 
         // Master: Spectral engine, gentle amounts
         Preset ("Gentle Punch").ts (1.5f, 0.0f, 25.0f).spec().ovs (1),
@@ -159,14 +161,14 @@ namespace ps
     };
 
     // Parameters a preset sets, in the order presetValues() fills them
-    inline const char* const presetParamIds[] = { id::mode, id::trans, id::sus, id::time, id::warmth, id::loCut, id::hiCut,
+    inline const char* const presetParamIds[] = { id::mode, id::trans, id::sus, id::transSide, id::susSide, id::time, id::warmth, id::loCut, id::hiCut,
         id::loQ, id::hiQ, id::loSlope, id::hiSlope, id::lowF, id::lowG, id::lowQ, id::lowType, id::midF, id::midG, id::midQ, id::midType, id::highF, id::highG, id::highQ, id::highType,
         id::focusProc, id::listen, id::msMode, id::link, id::balance, id::makeup, id::mix, id::clip, id::os, id::window, id::sharp };
     inline constexpr int numPresetParams = (int) (sizeof (presetParamIds) / sizeof (presetParamIds[0]));
 
     inline void presetValues (const Preset& p, float* v)
     {
-        const float vals[numPresetParams] = { (float) p.mode, p.trans, p.sus, p.time, p.warmth, p.loCut, p.hiCut,
+        const float vals[numPresetParams] = { (float) p.mode, p.trans, p.sus, p.transSide, p.susSide, p.time, p.warmth, p.loCut, p.hiCut,
             p.loQ, p.hiQ, (float) p.loSlope, (float) p.hiSlope, p.lowF, p.lowG, p.lowQ, (float) p.lowType, p.midF, p.midG, p.midQ, (float) p.midType, p.highF, p.highG, p.highQ, (float) p.highType,
             p.focusProc ? 1.0f : 0.0f, (float) listenOut, (float) p.msMode, p.link, p.balance, p.makeup, p.mix, p.clip ? 1.0f : 0.0f,
             (float) p.os, (float) p.window, p.sharp };

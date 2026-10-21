@@ -1034,7 +1034,7 @@ public:
             const String dot (CharPointer_UTF8 (" \xc2\xb7 "));
             String meta = ps::modeNames[p.mode] + dot + "T " + ps::fmtDb (p.trans) + dot + "S " + ps::fmtDb (p.sus)
                         + dot + ps::formatValue (ps::id::time, p.time);
-            if (p.msMode == 1) meta << dot << (p.balance < 0 ? "MID" : p.balance > 0 ? "SIDE" : "M/S");
+            if (p.msMode == 1) meta << dot << (p.balance < -50.0f ? "MID" : p.balance > 50.0f ? "SIDE" : "M/S");
             g.drawText (meta, Rectangle<float> (r.getX() + 50, r.getY() + 28, r.getWidth() - 56, 14), Justification::centredLeft, false);
         }
     }
@@ -1095,9 +1095,10 @@ public:
             if (! accent.isTransparent()) k->setAccent (accent);
             addAndMakeVisible (k);
             k->placeAt (x, y);
+            return k;
         };
-        knob (ps::id::trans,   "TRANSIENT", 108, 395, 562, true, Colour (0xffff7212));   // colours from the first mock-up
-        knob (ps::id::sus,     "SUSTAIN",   108, 530, 562, true, Colour (0xff6aa8ff));
+        transKnob = knob (ps::id::trans,   "TRANSIENT", 108, 395, 562, true, Colour (0xffff7212));   // colours from the first mock-up
+        susKnob   = knob (ps::id::sus,     "SUSTAIN",   108, 530, 562, true, Colour (0xff6aa8ff));
         knob (ps::id::time,    "TIME",       92, 660, 562, false, Colour (0xff9b6bff));
         knob (ps::id::warmth,  "WARMTH",     92, 790, 562, false, Colour (0xffffd23f));
         knob (ps::id::makeup,  "MAKEUP",     88, 990, 562);
@@ -1111,7 +1112,8 @@ public:
                               (Component*) &winRow, (Component*) &listen, (Component*) &clipBtn, (Component*) &bypassBtn,
                               (Component*) &focusSw, (Component*) &vu, (Component*) &meters, (Component*) &badge,
                               (Component*) &abA, (Component*) &abB, (Component*) &abCopy,
-                              (Component*) &presetPrev, (Component*) &presetWin, (Component*) &presetNext })
+                              (Component*) &presetPrev, (Component*) &presetWin, (Component*) &presetNext,
+                              (Component*) &tabMid, (Component*) &tabSide })
             addAndMakeVisible (c);
 
         badge.setBounds (14, 4, 56, 50);
@@ -1129,6 +1131,13 @@ public:
         clipBtn.setBounds (930, 690, 130, 36);
         bypassBtn.setBounds (1072, 690, 106, 36);
         winRow.setBounds (24, 518, 252, 30);
+        // M/S only: the Transient and Sustain knobs edit the Mid or the Side channel
+        tabMid.setBounds (392, 468, 68, 22); tabSide.setBounds (464, 468, 68, 22);
+        tabMid.setClickingTogglesState (false); tabSide.setClickingTogglesState (false);
+        tabMid.setTitle ("Edit the Mid channel"); tabSide.setTitle ("Edit the Side channel");
+        tabMid.onClick  = [this] { setMsTab (0); };
+        tabSide.onClick = [this] { setMsTab (1); };
+        setMsTab (0);
         presetPrev.setBounds (644, 690, 30, 36);
         presetWin.setBounds (677, 690, 200, 36);
         presetNext.setBounds (880, 690, 30, 36);
@@ -1187,6 +1196,7 @@ public:
     }
 
     void selectBand (int i) { display.selectBand (i); }
+    void selectMsTab (int t) { tabsShown = true; setMsTab (t); }
 
     void refresh()
     {
@@ -1201,6 +1211,8 @@ public:
         vu.setLevel (proc.outRms.load());
         badge.setActivity (jmax (outPk[0], outPk[1]));
 
+        const bool ms = proc.apvts.getRawParameterValue (ps::id::msMode)->load() > 0.5f;
+        if (ms != tabsShown) { tabsShown = ms; setMsTab (ms ? msTab : 0); }
         const bool spec = proc.apvts.getRawParameterValue (ps::id::mode)->load() > 0.5f;
         display.refresh (t + s, spec);
 
@@ -1217,6 +1229,18 @@ public:
     }
 
 private:
+    // The Transient and Sustain knobs follow the tab; L/R mode always edits the shared (Mid) pair
+    void setMsTab (int t)
+    {
+        msTab = t;
+        const bool ms = proc.apvts.getRawParameterValue (ps::id::msMode)->load() > 0.5f, side = ms && t == 1;
+        tabMid.setVisible (ms); tabSide.setVisible (ms);
+        tabMid.setToggleState (! side, dontSendNotification);
+        tabSide.setToggleState (side, dontSendNotification);
+        transKnob->bind (proc.apvts.getParameter (side ? ps::id::transSide : ps::id::trans));
+        susKnob->bind (proc.apvts.getParameter (side ? ps::id::susSide : ps::id::sus));
+    }
+
     void pickPreset (int i)
     {
         proc.loadPreset (i);
@@ -1238,7 +1262,10 @@ private:
     VuMeter vu;
     LedMeters meters;
     PotatoBadge badge;
-    SquareButton abA { "A" }, abB { "B" }, abCopy { "COPY" };
+    SquareButton abA { "A" }, abB { "B" }, abCopy { "COPY" }, tabMid { "MID" }, tabSide { "SIDE" };
+    Knob *transKnob = nullptr, *susKnob = nullptr;
+    int msTab = 0;
+    bool tabsShown = false;
     PresetArrow presetPrev { true, "Previous preset" }, presetNext { false, "Next preset" };
     LedWindow presetWin;
     PresetBrowser browser;
@@ -1278,3 +1305,4 @@ void PotatoShaperEditor::resized()
 void PotatoShaperEditor::timerCallback() { panel->refresh(); }
 
 void PotatoShaperEditor::selectBand (int i) { panel->selectBand (i); }
+void PotatoShaperEditor::selectMsTab (int t) { panel->selectMsTab (t); }

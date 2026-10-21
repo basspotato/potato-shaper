@@ -121,8 +121,8 @@ namespace
 }
 
 // Renders the editor with live audio running into a PNG (used for GUI previews):
-// PotatoShaperTests --snapshot file.png [spectral] [band=0..4] [type=0..3]   (band 0 / 4 = lo / hi cut, type = slope)
-int snapshot (const juce::File& file, bool spectral, int band, int bandType)
+// PotatoShaperTests --snapshot file.png [spectral] [side] [band=0..4] [type=0..3]   (band 0 / 4 = lo / hi cut, type = slope)
+int snapshot (const juce::File& file, bool spectral, int band, int bandType, bool sideTab)
 {
     PotatoShaperProcessor p;
     p.setPlayConfigDetails (2, 2, sr, block);
@@ -133,12 +133,14 @@ int snapshot (const juce::File& file, bool spectral, int band, int bandType)
     set (ps::id::makeup, 1.0f);
     const char* typeIds[5] { ps::id::loSlope, ps::id::lowType, ps::id::midType, ps::id::highType, ps::id::hiSlope };
     if (band >= 0 && band <= 4 && bandType >= 0) set (typeIds[band], (float) bandType);
+    if (sideTab) { set (ps::id::msMode, 1.0f); set (ps::id::transSide, -3.0f); set (ps::id::susSide, 5.0f); set (ps::id::link, 0.0f); }
     p.prepareToPlay (sr, block);
 
     auto hits = makeHits (0.3f);
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
     ed->setSize (1200, 760);
     static_cast<PotatoShaperEditor*> (ed.get())->selectBand (band);
+    if (sideTab) static_cast<PotatoShaperEditor*> (ed.get())->selectMsTab (1);
     juce::MidiBuffer midi;
     int pos = 0;
     for (int frame = 0; frame < 75; ++frame)
@@ -164,15 +166,16 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI init;
     if (argc >= 3 && juce::String (argv[1]) == "--snapshot")
     {
-        bool spectral = false; int band = -1, type = -1;
+        bool spectral = false, sideTab = false; int band = -1, type = -1;
         for (int i = 3; i < argc; ++i)
         {
             const juce::String a (argv[i]);
             if (a == "spectral") spectral = true;
+            else if (a == "side") sideTab = true;
             else if (a.startsWith ("band=")) band = a.substring (5).getIntValue();
             else if (a.startsWith ("type=")) type = a.substring (5).getIntValue();
         }
-        return snapshot (juce::File (argv[2]), spectral, band, type);
+        return snapshot (juce::File (argv[2]), spectral, band, type, sideTab);
     }
     for (int mode : { 0, 1 })
     {
@@ -183,6 +186,8 @@ int main (int argc, char** argv)
         const auto tDown   = run (mode, { { ps::id::trans, -12.0f } }, 0.25f);
         const auto sUp     = run (mode, { { ps::id::sus, 12.0f } }, 0.25f);
         const auto sDown   = run (mode, { { ps::id::sus, -12.0f } }, 0.25f);
+        const auto msMid   = run (mode, { { ps::id::msMode, 1.0f }, { ps::id::link, 0.0f }, { ps::id::trans, 12.0f } }, 0.25f);
+        const auto msSide  = run (mode, { { ps::id::msMode, 1.0f }, { ps::id::link, 0.0f }, { ps::id::transSide, 12.0f }, { ps::id::susSide, 12.0f } }, 0.25f);
         const auto hot     = run (mode, { { ps::id::trans, 24.0f }, { ps::id::makeup, 12.0f }, { ps::id::warmth, 60.0f }, { ps::id::os, 2.0f } }, 0.5f);
 
         auto row = [] (const char* name, const Result& r)
@@ -193,6 +198,8 @@ int main (int argc, char** argv)
         row ("transient -12", tDown);
         row ("sustain +12", sUp);
         row ("sustain -12", sDown);
+        row ("M/S mid +12", msMid);
+        row ("M/S side +12 / +12", msSide);
         row ("hot + warmth + 4x OS", hot);
 
         check (neutral.nullDb < (mode == 0 ? -120.0 : -60.0), "neutral settings pass audio unchanged (latency aligned)");
@@ -200,6 +207,9 @@ int main (int argc, char** argv)
         check (tDown.onsetDb < -4.0 && std::abs (tDown.tailDb) < 2.0, "transient cut lowers the attack, leaves the tail");
         check (sUp.tailDb > 4.0 && std::abs (sUp.onsetDb) < 3.0, "sustain boost raises the tail, leaves the attack");
         check (sDown.tailDb < -4.0 && std::abs (sDown.onsetDb) < 3.0, "sustain cut lowers the tail, leaves the attack");
+        check (msMid.onsetDb > 4.0, "M/S: the Mid settings shape a centred hit");
+        // the test hits are 0.9 on the right, so their Side is 26 dB down: the Side settings only nudge the mix
+        check (std::abs (msSide.onsetDb) < 2.0 && std::abs (msSide.tailDb) < 2.0, "M/S: the Side settings barely touch a near-centred hit");
         check (std::abs (tUpLow.onsetDb - tUp.onsetDb) < 0.5 && std::abs (tUpLow.tailDb - tUp.tailDb) < 0.5, "detection is level independent (-20 dB input, same result)");
         const double thd = steadyToneResidualDb (mode);
         std::printf ("  steady 100 Hz tone, transient +12 / sustain +12: residual %.1f dB\n", thd);

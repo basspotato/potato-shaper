@@ -101,7 +101,7 @@ private:
     struct Raw
     {
         std::atomic<float> *mode, *trans, *sus, *time, *warmth, *loCut, *hiCut, *lowF, *lowG, *lowQ, *midF, *midG, *midQ,
-                           *highF, *highG, *highQ, *lowType, *midType, *highType, *loQ, *hiQ, *loSlope, *hiSlope, *focusProc, *listen, *msMode, *link, *balance, *extSc, *scGain,
+                           *highF, *highG, *highQ, *transSide, *susSide, *lowType, *midType, *highType, *loQ, *hiQ, *loSlope, *hiSlope, *focusProc, *listen, *msMode, *link, *balance, *extSc, *scGain,
                            *makeup, *mix, *clip, *os, *window, *sharp, *bypass;
     } raw {};
 
