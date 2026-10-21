@@ -22,6 +22,9 @@ namespace ps
         inline constexpr const char* highF     = "highf";
         inline constexpr const char* highG     = "highg";
         inline constexpr const char* highQ     = "highq";
+        inline constexpr const char* lowType   = "lowtype";
+        inline constexpr const char* midType   = "midtype";
+        inline constexpr const char* highType  = "hightype";
         inline constexpr const char* focusProc = "focusproc";  // Focus band also limits where processing is applied
         inline constexpr const char* listen    = "listen";
         inline constexpr const char* msMode    = "msmode";     // L/R or M/S
@@ -39,6 +42,7 @@ namespace ps
     }
 
     inline const juce::StringArray listenNames { "OUT", "TRANSIENT", "SUSTAIN", "DELTA", "SIDECHAIN" };
+    inline const juce::StringArray bandTypeNames { "LO SHELF", "PEAK", "HI SHELF", "TILT" };
     inline const juce::StringArray modeNames   { "CLEAN", "SPECTRAL" };
     inline const juce::StringArray osNames     { "OFF", "2X", "4X" };
     inline const juce::StringArray windowNames { "SHORT", "MEDIUM", "LONG" };
@@ -110,6 +114,9 @@ namespace ps
         fl (id::highF, "High Freq", logRange (1500.0f, 18000.0f), 6000.0f, "Hz");
         fl (id::highG, "High Gain", { -18.0f, 18.0f, 0.01f }, 0.0f, "dB");
         l.add (std::make_unique<AudioParameterFloat> (ParameterID { id::highQ, 1 }, "High Width", qRange(), 0.71f));
+        choice (id::lowType,  "Low Type",  bandTypeNames, bandLoShelf);
+        choice (id::midType,  "Mid Type",  bandTypeNames, bandPeak);
+        choice (id::highType, "High Type", bandTypeNames, bandHiShelf);
         toggle (id::focusProc, "Focus Processing", true);
 
         choice (id::listen, "Listen", listenNames, 0);

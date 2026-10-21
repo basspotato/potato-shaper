@@ -31,6 +31,8 @@ namespace ps
         {
             numCh = juce::jmin (numCh, maxCh);
             curve.design (p.focus, sr);
+            for (int s = 0; s < FocusCurve::numStages; ++s)   // a stage that was off starts from silence when it comes back
+                if (! curve.active[(size_t) s]) for (auto& ch : det) ch[s].reset();
             const auto dc = Detector::coeffs (p.timeMs, sr, true);
             const float aGain = onePole (0.0002, sr);
             const bool useBand = p.focusProc && curve.bandActive();
@@ -42,7 +44,8 @@ namespace ps
                 for (int ch = 0; ch < numCh; ++ch)
                 {
                     float v = (sc != nullptr ? sc[ch][i] * p.scGain : io[ch][i]);
-                    for (int s = 0; s < FocusCurve::numStages; ++s) v = det[ch][s].process (curve.c[(size_t) s], v);
+                    for (int s = 0; s < FocusCurve::numStages; ++s)
+                        if (curve.active[(size_t) s]) v = det[ch][s].process (curve.c[(size_t) s], v);
                     d[ch] = v;
                     pw += v * v;
                 }

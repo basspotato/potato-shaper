@@ -1,6 +1,7 @@
 // Offline checks for both engines: null test, transient/sustain response, level independence, safety clip, CPU.
 // Build with -DPOTATO_TESTS=ON and run PotatoShaperTests. Exits non-zero if a check fails.
 #include "PluginProcessor.h"
+#include "PluginEditor.h"
 #include <cstdio>
 
 namespace
@@ -119,8 +120,9 @@ namespace
     }
 }
 
-// Renders the editor with live audio running into a PNG (used for GUI previews): PotatoShaperTests --snapshot file.png [spectral]
-int snapshot (const juce::File& file, bool spectral)
+// Renders the editor with live audio running into a PNG (used for GUI previews):
+// PotatoShaperTests --snapshot file.png [spectral] [band=1..3] [type=0..3]
+int snapshot (const juce::File& file, bool spectral, int band, int bandType)
 {
     PotatoShaperProcessor p;
     p.setPlayConfigDetails (2, 2, sr, block);
@@ -129,11 +131,13 @@ int snapshot (const juce::File& file, bool spectral)
     set (ps::id::trans, 6.5f); set (ps::id::sus, -3.0f); set (ps::id::time, 18.0f); set (ps::id::warmth, 30.0f);
     set (ps::id::loCut, 30.0f); set (ps::id::hiCut, 14000.0f); set (ps::id::lowG, 5.0f); set (ps::id::midG, -4.0f); set (ps::id::highG, 4.0f);
     set (ps::id::makeup, 1.0f);
+    if (band >= 1 && bandType >= 0) set (band == 1 ? ps::id::lowType : (band == 2 ? ps::id::midType : ps::id::highType), (float) bandType);
     p.prepareToPlay (sr, block);
 
     auto hits = makeHits (0.3f);
     std::unique_ptr<juce::AudioProcessorEditor> ed (p.createEditor());
     ed->setSize (1200, 760);
+    static_cast<PotatoShaperEditor*> (ed.get())->selectBand (band);
     juce::MidiBuffer midi;
     int pos = 0;
     for (int frame = 0; frame < 75; ++frame)
@@ -158,7 +162,17 @@ int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI init;
     if (argc >= 3 && juce::String (argv[1]) == "--snapshot")
-        return snapshot (juce::File (argv[2]), argc >= 4 && juce::String (argv[3]) == "spectral");
+    {
+        bool spectral = false; int band = -1, type = -1;
+        for (int i = 3; i < argc; ++i)
+        {
+            const juce::String a (argv[i]);
+            if (a == "spectral") spectral = true;
+            else if (a.startsWith ("band=")) band = a.substring (5).getIntValue();
+            else if (a.startsWith ("type=")) type = a.substring (5).getIntValue();
+        }
+        return snapshot (juce::File (argv[2]), spectral, band, type);
+    }
     for (int mode : { 0, 1 })
     {
         std::printf ("\n== %s engine ==\n", mode == 0 ? "CLEAN" : "SPECTRAL");

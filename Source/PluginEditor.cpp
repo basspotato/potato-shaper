@@ -9,27 +9,47 @@ using namespace look;
 class Knob : public Component
 {
 public:
-    Knob (RangedAudioParameter& p, String title, float diameter, bool bipolar = false)
-        : param (p), name (std::move (title)), size (diameter), origin (bipolar ? 0.5f : 0.0f),
-          attach (p, [this] (float) { repaint(); }, nullptr)
+    Knob (String title, float diameter, bool bipolar = false)
+        : name (std::move (title)), size (diameter), origin (bipolar ? 0.5f : 0.0f)
     {
-        attach.sendInitialUpdate();
         setWantsKeyboardFocus (true);
         setMouseCursor (MouseCursor::UpDownResizeCursor);
         setTitle (name);
     }
 
+    Knob (RangedAudioParameter& p, String title, float diameter, bool bipolar = false) : Knob (std::move (title), diameter, bipolar) { bind (&p); }
+
+    // Points the knob at another parameter (the band box re-uses its three knobs for every band)
+    void bind (RangedAudioParameter* p)
+    {
+        attach.reset();
+        param = p;
+        if (p != nullptr)
+        {
+            attach = std::make_unique<ParameterAttachment> (*p, [this] (float) { repaint(); }, nullptr);
+            attach->sendInitialUpdate();
+        }
+        repaint();
+    }
+
     void placeAt (int cx, int cy) { setBounds (cx - ((int) size + 40) / 2, cy - (int) size / 2 - 18, (int) size + 40, (int) size + 34); }
+
+    // Gives this knob its own backlit ring colour: base at the left end of travel, lighter peak toward the right
+    void setAccent (Colour base, Colour peak) { accent = base; accentPeak = peak; lit = true; repaint(); }
+    void setAccent (Colour base) { setAccent (base, base.interpolatedWith (Colours::white, 0.45f)); }
 
     void paint (Graphics& g) override
     {
-        const float w = (float) getWidth();
-        g.setFont (label (16.0f, 0.1f));
+        if (param == nullptr) return;
+        const float w = (float) getWidth(), n = param->getValue();
+        g.setFont (label (size < 70.0f ? 14.5f : 16.0f, 0.1f));
         glowText (g, name, Rectangle<float> (0, 0, w, 17), Justification::centred, col::ink, 0.22f);
-        drawLitKnob (g, { w * 0.5f, 18.0f + size * 0.5f }, size, param.getValue(), size >= 84.0f, true, origin);
-        g.setColour (dragging ? ramp (param.getValue()).brighter (0.4f) : Colour (0xffb98c62));
+        std::unique_ptr<RampScope> scope;
+        if (lit) scope = std::make_unique<RampScope> (accent, accentPeak);
+        drawLitKnob (g, { w * 0.5f, 18.0f + size * 0.5f }, size, n, size >= 84.0f, true, origin);
+        g.setColour (dragging ? ramp (n).brighter (0.4f) : Colour (0xffb98c62));
         g.setFont (mono (12.5f));
-        g.drawText (ps::formatValue (param.getParameterID(), value()), Rectangle<float> (0, 18.0f + size, w, 15), Justification::centred, false);
+        g.drawText (ps::formatValue (param->getParameterID(), value()), Rectangle<float> (0, 18.0f + size, w, 15), Justification::centred, false);
         if (hasKeyboardFocus (false))
         {
             g.setColour (col::amber.withAlpha (0.6f));
@@ -39,20 +59,25 @@ public:
 
     void mouseDown (const MouseEvent& e) override
     {
+        if (attach == nullptr) return;
         grabKeyboardFocus();
-        attach.beginGesture();
+        attach->beginGesture();
         dragging = true;
         startY = e.getScreenY();
-        startN = param.getValue();
+        startN = param->getValue();
         repaint();
     }
     void mouseDrag (const MouseEvent& e) override
     {
+        if (attach == nullptr) return;
         const float n = startN + (float) (startY - e.getScreenY()) / (e.mods.isShiftDown() ? 900.0f : 220.0f);
-        attach.setValueAsPartOfGesture (param.convertFrom0to1 (jlimit (0.0f, 1.0f, n)));
+        attach->setValueAsPartOfGesture (param->convertFrom0to1 (jlimit (0.0f, 1.0f, n)));
     }
-    void mouseUp (const MouseEvent&) override { attach.endGesture(); dragging = false; repaint(); }
-    void mouseDoubleClick (const MouseEvent&) override { attach.setValueAsCompleteGesture (param.convertFrom0to1 (param.getDefaultValue())); }
+    void mouseUp (const MouseEvent&) override { if (attach != nullptr) attach->endGesture(); dragging = false; repaint(); }
+    void mouseDoubleClick (const MouseEvent&) override
+    {
+        if (attach != nullptr) attach->setValueAsCompleteGesture (param->convertFrom0to1 (param->getDefaultValue()));
+    }
     void mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& w) override
     {
         if (exactlyEqual (w.deltaY, 0.0f)) return;
@@ -69,16 +94,20 @@ public:
     void focusLost (FocusChangeType) override { repaint(); }
 
 private:
-    float value() const { return param.convertFrom0to1 (param.getValue()); }
-    void nudge (float d) { attach.setValueAsCompleteGesture (param.convertFrom0to1 (jlimit (0.0f, 1.0f, param.getValue() + d))); }
+    float value() const { return param->convertFrom0to1 (param->getValue()); }
+    void nudge (float d)
+    {
+        if (attach != nullptr) attach->setValueAsCompleteGesture (param->convertFrom0to1 (jlimit (0.0f, 1.0f, param->getValue() + d)));
+    }
 
-    RangedAudioParameter& param;
+    RangedAudioParameter* param = nullptr;
+    std::unique_ptr<ParameterAttachment> attach;
     String name;
     float size, origin;
-    ParameterAttachment attach;
-    bool dragging = false;
+    bool dragging = false, lit = false;
     int startY = 0;
     float startN = 0.0f;
+    Colour accent, accentPeak;
 };
 
 //==============================================================================
@@ -209,6 +238,129 @@ public:
 
 private:
     ParameterAttachment attach;
+};
+
+//==============================================================================
+// Four-way band shape selector drawn as curve icons: low shelf, peaking, high shelf, tilt
+class ShapeButtons : public Component
+{
+public:
+    static constexpr int cellW = 46, cellH = 34;
+
+    ShapeButtons() { setTitle ("Band shape"); setMouseCursor (MouseCursor::PointingHandCursor); }
+
+    void bind (RangedAudioParameter* p)
+    {
+        attach.reset();
+        if (p != nullptr)
+        {
+            attach = std::make_unique<ParameterAttachment> (*p, [this] (float v) { selected = roundToInt (v); repaint(); }, nullptr);
+            attach->sendInitialUpdate();
+        }
+    }
+
+    void paint (Graphics& g) override
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            const auto r = Rectangle<float> ((float) (i * cellW), 0.0f, (float) (cellW - 5), (float) cellH).reduced (1.0f);
+            const bool on = i == selected;
+            if (on)
+            {
+                g.setColour (col::amber.withAlpha (0.28f)); g.fillRoundedRectangle (r.expanded (2.0f), 5.0f);
+                g.setGradientFill (ColourGradient (col::yellow.brighter (0.2f), 0, r.getY(), col::orange, 0, r.getBottom(), false));
+            }
+            else
+            {
+                g.setGradientFill (ColourGradient (Colour (i == hover ? 0xff261d16 : 0xff1d1713), 0, r.getY(), Colour (0xff0e0b09), 0, r.getBottom(), false));
+            }
+            g.fillRoundedRectangle (r, 3.0f);
+            if (! on) { g.setColour (col::line.withAlpha (i == hover ? 0.75f : 0.45f)); g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f); }
+
+            auto gl = glyph (i);
+            gl.applyTransform (AffineTransform::translation (r.getCentreX() - 15.0f, r.getCentreY() - 9.0f));
+            g.setColour (on ? Colour (0xff1a0b02) : col::ink);
+            g.strokePath (gl, PathStrokeType (2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+        g.setFont (label (12.5f, 0.2f)); g.setColour (col::inkDim);
+        g.drawText (ps::bandTypeNames[jlimit (0, 3, selected)], Rectangle<float> (0, (float) cellH + 4, (float) (cellW * 4 - 5), 14), Justification::centred, false);
+    }
+
+    void mouseMove (const MouseEvent& e) override { setHover (cellAt (e)); }
+    void mouseExit (const MouseEvent&) override { setHover (-1); }
+    void mouseDown (const MouseEvent& e) override
+    {
+        const int i = cellAt (e);
+        if (i >= 0 && attach != nullptr) attach->setValueAsCompleteGesture ((float) i);
+    }
+
+private:
+    // 30 x 18 icons on a 0 dB baseline at y = 14
+    static Path glyph (int type)
+    {
+        Path p;
+        switch (type)
+        {
+            case 0:  p.startNewSubPath (0, 4);  p.lineTo (7, 4);  p.cubicTo (15, 4, 14, 14, 22, 14); p.lineTo (30, 14); break;
+            case 1:  p.startNewSubPath (0, 14); p.cubicTo (8, 14, 9, 3, 15, 3); p.cubicTo (21, 3, 22, 14, 30, 14); break;
+            case 2:  p.startNewSubPath (0, 14); p.lineTo (7, 14); p.cubicTo (15, 14, 14, 4, 22, 4); p.lineTo (30, 4); break;
+            default: p.startNewSubPath (1, 15); p.lineTo (29, 3); break;
+        }
+        return p;
+    }
+
+    int cellAt (const MouseEvent& e) const { return e.y <= cellH && e.x >= 0 && e.x < cellW * 4 ? e.x / cellW : -1; }
+    void setHover (int i) { if (i != hover) { hover = i; repaint(); } }
+
+    std::unique_ptr<ParameterAttachment> attach;
+    int selected = 0, hover = -1;
+};
+
+//==============================================================================
+// The band box that opens over the display when a band node is clicked (as in oeksound Spiff):
+// frequency, sensitivity and Q knobs, plus the band shape selector on the right.
+class BandPanel : public Component
+{
+public:
+    static constexpr int panelW = 596, panelH = 112;
+
+    BandPanel() : freq ("FREQ", 52.0f), sens ("SENS", 52.0f, true), q ("Q", 52.0f)
+    {
+        for (auto* k : { &freq, &sens, &q }) addAndMakeVisible (k);
+        addAndMakeVisible (shapes);
+        freq.setBounds (104, 6, 92, 96);
+        sens.setBounds (204, 6, 92, 96);
+        q.setBounds (304, 6, 92, 96);
+        shapes.setBounds (402, 22, ShapeButtons::cellW * 4, ShapeButtons::cellH + 20);
+        setTitle ("Band settings");
+    }
+
+    void show (const String& title, Colour colour, RangedAudioParameter* f, RangedAudioParameter* g, RangedAudioParameter* qp, RangedAudioParameter* type)
+    {
+        name = title; accent = colour;
+        for (auto* k : { &freq, &sens, &q }) k->setAccent (colour);
+        freq.bind (f); sens.bind (g); q.bind (qp); shapes.bind (type);
+        repaint();
+    }
+
+    void paint (Graphics& g) override
+    {
+        const auto b = getLocalBounds().toFloat().reduced (0.5f);
+        g.setColour (Colour (0xff0b0806)); g.fillRoundedRectangle (b, 8.0f);
+        g.setColour (col::line.withAlpha (0.5f)); g.drawRoundedRectangle (b, 8.0f, 1.2f);
+        g.setColour (accent); g.fillRoundedRectangle (0.0f, 12.0f, 4.0f, (float) getHeight() - 24.0f, 2.0f);
+        drawLed (g, Rectangle<float> (11, 11).withCentre ({ 25.0f, 46.0f }), true);
+        g.setFont (label (20.0f, 0.2f, true));
+        glowText (g, name, Rectangle<float> (38, 32, 62, 22), Justification::centredLeft, accent, 0.22f);
+        g.setFont (label (12.5f, 0.3f)); g.setColour (col::inkDim);
+        g.drawText ("BAND", Rectangle<float> (38, 52, 62, 14), Justification::centredLeft, false);
+    }
+
+private:
+    Knob freq, sens, q;
+    ShapeButtons shapes;
+    String name;
+    Colour accent { Colours::white };
 };
 
 //==============================================================================
@@ -368,13 +520,32 @@ public:
     explicit FocusDisplay (PotatoShaperProcessor& p) : proc (p)
     {
         auto get = [&] (const char* pid) { return p.apvts.getParameter (pid); };
-        nodes[0] = { get (ps::id::loCut), nullptr, nullptr, "LO CUT", Colour (0xffd9dde2) };
-        nodes[1] = { get (ps::id::lowF), get (ps::id::lowG), get (ps::id::lowQ), "LOW", Colour (0xff9b6bff) };
-        nodes[2] = { get (ps::id::midF), get (ps::id::midG), get (ps::id::midQ), "MID", Colour (0xff6aa8ff) };
-        nodes[3] = { get (ps::id::highF), get (ps::id::highG), get (ps::id::highQ), "HIGH", Colour (0xffffd23f) };
-        nodes[4] = { get (ps::id::hiCut), nullptr, nullptr, "HI CUT", Colour (0xffd9dde2) };
+        nodes[0] = { get (ps::id::loCut), nullptr, nullptr, nullptr, "LO CUT", Colour (0xffd9dde2) };
+        nodes[1] = { get (ps::id::lowF), get (ps::id::lowG), get (ps::id::lowQ), get (ps::id::lowType), "LOW", Colour (0xff9b6bff) };
+        nodes[2] = { get (ps::id::midF), get (ps::id::midG), get (ps::id::midQ), get (ps::id::midType), "MID", Colour (0xff6aa8ff) };
+        nodes[3] = { get (ps::id::highF), get (ps::id::highG), get (ps::id::highQ), get (ps::id::highType), "HIGH", Colour (0xffffd23f) };
+        nodes[4] = { get (ps::id::hiCut), nullptr, nullptr, nullptr, "HI CUT", Colour (0xffd9dde2) };
         for (auto& s : specDb) s = -120.0f;
         setTitle ("Focus display");
+        addChildComponent (panel);
+    }
+
+    // Opens the band box for node 1..3 (low, mid, high), or closes it for anything else
+    void selectBand (int i)
+    {
+        if (i < 1 || i > 3) i = -1;
+        if (i == selected) return;
+        selected = i;
+        if (i < 0) panel.setVisible (false);
+        else
+        {
+            auto& n = nodes[i];
+            panel.show (n.name, n.colour, n.freq, n.gain, n.q, n.type);
+            panelTop = false;
+            placePanel();
+            panel.setVisible (true);
+        }
+        repaint();
     }
 
     void refresh (float liveGainDb, bool spectralMode)
@@ -394,6 +565,8 @@ public:
             const float db = 20.0f * std::log10 (m * 4.0f / fftSize + 1.0e-9f);
             specDb[x] = db > specDb[x] ? db : jmax (db, specDb[x] - 1.2f);
         }
+
+        if (selected >= 0) placePanel();
 
         // processing overlay
         designCurve();
@@ -485,7 +658,7 @@ public:
         {
             const auto c = nodePos (i);
             const auto& nd = nodes[i];
-            const bool hot = i == hover || i == dragNode;
+            const bool hot = i == hover || i == dragNode || i == selected;
             g.setColour (nd.colour.withAlpha (hot ? 0.35f : 0.18f)); g.fillEllipse (Rectangle<float> (26, 26).withCentre (c));
             g.setColour (Colour (0xff0a0603)); g.fillEllipse (Rectangle<float> (14, 14).withCentre (c));
             g.setColour (nd.colour); g.drawEllipse (Rectangle<float> (14, 14).withCentre (c), 2.2f);
@@ -496,7 +669,7 @@ public:
 
         // readout for the node being dragged or hovered
         const int ri = dragNode >= 0 ? dragNode : hover;
-        if (ri >= 0)
+        if (ri >= 0 && ! panel.isVisible())
         {
             auto& nd = nodes[ri];
             String t = nd.name + "  " + ps::fmtHz (nodeFreq (ri));
@@ -530,6 +703,7 @@ public:
     void mouseDown (const MouseEvent& e) override
     {
         dragNode = hit (e.position);
+        selectBand (dragNode);
         if (dragNode < 0) return;
         auto& nd = nodes[dragNode];
         widthDrag = (e.mods.isCtrlDown() || e.mods.isCommandDown()) && nd.q != nullptr;
@@ -593,7 +767,7 @@ public:
     }
 
 private:
-    struct Node { RangedAudioParameter *freq = nullptr, *gain = nullptr, *q = nullptr; String name; Colour colour; };
+    struct Node { RangedAudioParameter *freq = nullptr, *gain = nullptr, *q = nullptr, *type = nullptr; String name; Colour colour; };
 
     static constexpr float W = 600.0f, plotTop = 8.0f, plotBottom = 282.0f, laneTop = 304.0f;
     static constexpr float zeroY = 0.5f * (plotTop + plotBottom), dbPx = (plotBottom - plotTop) * 0.5f / 18.0f;
@@ -624,11 +798,24 @@ private:
     {
         auto v = [&] (const char* pid) { return proc.apvts.getRawParameterValue (pid)->load(); };
         using namespace ps::id;
-        ps::FocusSettings s { v (loCut), v (hiCut), v (lowF), v (lowG), v (lowQ), v (midF), v (midG), v (midQ), v (highF), v (highG), v (highQ) };
+        ps::FocusSettings s { v (loCut), v (hiCut), v (lowF), v (lowG), v (lowQ), v (midF), v (midG), v (midQ), v (highF), v (highG), v (highQ),
+                              (int) v (lowType), (int) v (midType), (int) v (highType) };
         curve.design (s, proc.getRate());
     }
 
+    // Keeps the band box clear of the selected node: bottom of the display by default, top when the node is low on the graph
+    void placePanel()
+    {
+        const float ny = nodePos (selected).y;
+        if (! panelTop && ny > 236.0f) panelTop = true;
+        else if (panelTop && ny < 150.0f) panelTop = false;
+        panel.setBounds (2, panelTop ? 6 : (int) getHeight() - BandPanel::panelH - 4, BandPanel::panelW, BandPanel::panelH);
+    }
+
     PotatoShaperProcessor& proc;
+    BandPanel panel;
+    int selected = -1;
+    bool panelTop = false;
     Node nodes[5];
     ps::FocusCurve curve;
     dsp::FFT fft { fftOrder };
@@ -717,16 +904,17 @@ public:
           focusSw (*p.apvts.getParameter (ps::id::focusProc), "FOCUS", "PROC", "DET")
     {
         auto& s = p.apvts;
-        auto knob = [&] (const char* pid, const char* title, float size, int x, int y, bool bipolar = false)
+        auto knob = [&] (const char* pid, const char* title, float size, int x, int y, bool bipolar = false, Colour accent = Colour())
         {
             auto* k = knobs.add (new Knob (*s.getParameter (pid), title, size, bipolar));
+            if (! accent.isTransparent()) k->setAccent (accent);
             addAndMakeVisible (k);
             k->placeAt (x, y);
         };
-        knob (ps::id::trans,   "TRANSIENT", 108, 395, 562, true);
-        knob (ps::id::sus,     "SUSTAIN",   108, 530, 562, true);
-        knob (ps::id::time,    "TIME",       92, 660, 562);
-        knob (ps::id::warmth,  "WARMTH",     92, 790, 562);
+        knob (ps::id::trans,   "TRANSIENT", 108, 395, 562, true, Colour (0xffff7212));   // colours from the first mock-up
+        knob (ps::id::sus,     "SUSTAIN",   108, 530, 562, true, Colour (0xff6aa8ff));
+        knob (ps::id::time,    "TIME",       92, 660, 562, false, Colour (0xff9b6bff));
+        knob (ps::id::warmth,  "WARMTH",     92, 790, 562, false, Colour (0xffffd23f));
         knob (ps::id::makeup,  "MAKEUP",     88, 990, 562);
         knob (ps::id::mix,     "MIX",        88, 1110, 562);
         knob (ps::id::link,    "LINK",       72, 85, 198);
@@ -743,7 +931,7 @@ public:
         badge.setBounds (14, 4, 56, 50);
         mode.setBounds (330, 16, 220, 30);
         abA.setBounds (590, 16, 40, 30); abB.setBounds (636, 16, 40, 30); abCopy.setBounds (682, 16, 70, 30);
-        osRow.setBounds (1010, 16, 170, 30);
+        osRow.setBounds (966, 16, 170, 30);   // centred on the VU meter (x 926 to 1176)
         display.setBounds (300, 64, 600, 380);
         vu.setBounds (926, 64, 250, 150);
         meters.setBounds (926, 226, 250, 218);
@@ -771,7 +959,7 @@ public:
         g.setFont (label (13.0f, 0.2f)); g.setColour (col::inkDim);
         g.drawText ("ENGINE", Rectangle<float> (330, 0, 220, 14), Justification::left, false);
         g.drawText ("A / B", Rectangle<float> (590, 0, 160, 14), Justification::left, false);
-        g.drawText ("OVERSAMPLE", Rectangle<float> (1010, 0, 170, 14), Justification::left, false);
+        g.drawText ("OVERSAMPLE", Rectangle<float> (966, 0, 170, 14), Justification::centred, false);
 
         auto section = [&] (const char* name, int y)
         {
@@ -794,6 +982,8 @@ public:
                     Rectangle<float> (650, 690, 200, 36), Justification::centredLeft, false);
         drawLed (g, Rectangle<float> (11, 11).withCentre ({ 918.0f, 708.0f }), clipLit > 0);
     }
+
+    void selectBand (int i) { display.selectBand (i); }
 
     void refresh()
     {
@@ -871,3 +1061,5 @@ void PotatoShaperEditor::resized()
 }
 
 void PotatoShaperEditor::timerCallback() { panel->refresh(); }
+
+void PotatoShaperEditor::selectBand (int i) { panel->selectBand (i); }

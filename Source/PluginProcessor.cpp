@@ -28,7 +28,7 @@ PotatoShaperProcessor::PotatoShaperProcessor()
     auto r = [this] (const char* pid) { return apvts.getRawParameterValue (pid); };
     namespace id = ps::id;
     raw = { r (id::mode), r (id::trans), r (id::sus), r (id::time), r (id::warmth), r (id::loCut), r (id::hiCut), r (id::lowF),
-            r (id::lowG), r (id::lowQ), r (id::midF), r (id::midG), r (id::midQ), r (id::highF), r (id::highG), r (id::highQ),
+            r (id::lowG), r (id::lowQ), r (id::midF), r (id::midG), r (id::midQ), r (id::highF), r (id::highG), r (id::highQ), r (id::lowType), r (id::midType), r (id::highType),
             r (id::focusProc), r (id::listen), r (id::msMode), r (id::link), r (id::balance), r (id::extSc), r (id::scGain),
             r (id::makeup), r (id::mix), r (id::clip), r (id::os), r (id::window), r (id::sharp), r (id::bypass) };
 }
@@ -55,7 +55,8 @@ ps::EngineParams PotatoShaperProcessor::readParams() const
     p.timeMs  = raw.time->load();
     p.warmth  = raw.warmth->load() * 0.01f;
     p.focus   = { raw.loCut->load(), raw.hiCut->load(), raw.lowF->load(), raw.lowG->load(), raw.lowQ->load(),
-                  raw.midF->load(), raw.midG->load(), raw.midQ->load(), raw.highF->load(), raw.highG->load(), raw.highQ->load() };
+                  raw.midF->load(), raw.midG->load(), raw.midQ->load(), raw.highF->load(), raw.highG->load(), raw.highQ->load(),
+                  (int) raw.lowType->load(), (int) raw.midType->load(), (int) raw.highType->load() };
     p.focusProc = raw.focusProc->load() > 0.5f;
     p.link    = raw.link->load() * 0.01f;
     p.balance = raw.balance->load() * 0.01f;

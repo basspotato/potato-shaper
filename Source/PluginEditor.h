@@ -14,6 +14,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    void selectBand (int index);   // opens the band box for low (1), mid (2) or high (3); used for GUI snapshots
+
     static constexpr int panelW = 1200, panelH = 760;
 
 private:

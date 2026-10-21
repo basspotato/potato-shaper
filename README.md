@@ -17,7 +17,7 @@ Detection is level independent, so there is no threshold. Turning the track up o
 | Sustain | Gain of the detected tails (±24 dB). |
 | Time | Length of the transient region (2 to 200 ms). A longer Time also starts the sustain later. |
 | Warmth | Saturation applied to the transients only. |
-| Focus display | Drag the five nodes (Lo Cut, Low shelf, Mid bell, High shelf, Hi Cut) to weight what the detector reacts to. Ctrl-drag or the mouse wheel changes width, and double-click resets a node. |
+| Focus display | Drag the five nodes (Lo Cut, Low, Mid, High, Hi Cut) to weight what the detector reacts to. Click a Low, Mid or High node to open its band box, with Freq, Sens and Q knobs and a shape selector (low shelf, peak, high shelf, tilt). Ctrl-drag or the mouse wheel changes width, and double-click resets a node. Click an empty spot to close the box. |
 | Focus switch | **DET** shapes the whole signal. **PROC** also limits processing to the band between Lo Cut and Hi Cut. |
 | Listen | Out, Transient, Sustain, Delta (what the plugin changes) or Sidechain (what the detector hears). |
 | Stereo | L/R or M/S processing, Link (0 to 100 %), and Balance (how much each channel is processed). |

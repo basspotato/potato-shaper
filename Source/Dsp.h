@@ -71,18 +71,22 @@ namespace ps
     };
 
     //==============================================================================
-    // The Focus curve: lo cut (24 dB/oct), low shelf, mid bell, high shelf, hi cut (24 dB/oct).
+    // The Focus curve: lo cut (24 dB/oct), three bands (each a low shelf, bell, high shelf or tilt shelf) and hi cut (24 dB/oct).
     // It weights what the detector listens to. The same coefficients draw the curve in the editor.
+    enum BandType { bandLoShelf, bandPeak, bandHiShelf, bandTilt };
+
     struct FocusSettings
     {
         float loCut = 20, hiCut = 20000, lowF = 90, lowG = 0, lowQ = 0.71f, midF = 800, midG = 0, midQ = 0.71f, highF = 6000, highG = 0, highQ = 0.71f;
+        int lowType = bandLoShelf, midType = bandPeak, highType = bandHiShelf;
     };
 
     struct FocusCurve
     {
-        static constexpr int numStages = 7;
+        static constexpr int numStages = 10;   // lo cut x2, three bands x2 (tilt uses both), hi cut x2
         std::array<BiquadCoeffs, numStages> c;
-        std::array<BiquadCoeffs, 2> band;   // 12 dB/oct lo/hi cut used when Focus also limits processing
+        std::array<bool, numStages> active {};
+        std::array<BiquadCoeffs, 2> band;      // 12 dB/oct lo/hi cut used when Focus also limits processing
         bool loActive = false, hiActive = false;
 
         void design (const FocusSettings& s, double sr)
@@ -90,13 +94,13 @@ namespace ps
             const double nyq = sr * 0.5;
             loActive = s.loCut > 20.5f;
             hiActive = s.hiCut < 19900.0f && s.hiCut < nyq * 0.95;
-            c[0] = loActive ? BiquadCoeffs::make (0, sr, s.loCut, 0.5412, 0) : BiquadCoeffs();
-            c[1] = loActive ? BiquadCoeffs::make (0, sr, s.loCut, 1.3066, 0) : BiquadCoeffs();
-            c[2] = BiquadCoeffs::make (3, sr, s.lowF, s.lowQ, s.lowG);
-            c[3] = BiquadCoeffs::make (2, sr, s.midF, s.midQ, s.midG);
-            c[4] = s.highF < nyq * 0.95 ? BiquadCoeffs::make (4, sr, s.highF, s.highQ, s.highG) : BiquadCoeffs();
-            c[5] = hiActive ? BiquadCoeffs::make (1, sr, s.hiCut, 0.5412, 0) : BiquadCoeffs();
-            c[6] = hiActive ? BiquadCoeffs::make (1, sr, s.hiCut, 1.3066, 0) : BiquadCoeffs();
+            set (0, loActive, BiquadCoeffs::make (0, sr, s.loCut, 0.5412, 0));
+            set (1, loActive, BiquadCoeffs::make (0, sr, s.loCut, 1.3066, 0));
+            designBand (2, s.lowType,  s.lowF,  s.lowG,  s.lowQ,  sr);
+            designBand (4, s.midType,  s.midF,  s.midG,  s.midQ,  sr);
+            designBand (6, s.highType, s.highF, s.highG, s.highQ, sr);
+            set (8, hiActive, BiquadCoeffs::make (1, sr, s.hiCut, 0.5412, 0));
+            set (9, hiActive, BiquadCoeffs::make (1, sr, s.hiCut, 1.3066, 0));
             band[0] = loActive ? BiquadCoeffs::make (0, sr, s.loCut, 0.7071, 0) : BiquadCoeffs();
             band[1] = hiActive ? BiquadCoeffs::make (1, sr, s.hiCut, 0.7071, 0) : BiquadCoeffs();
         }
@@ -104,12 +108,31 @@ namespace ps
         double magnitude (double f, double sr) const
         {
             double m = 1.0;
-            for (auto& s : c) m *= s.magnitude (f, sr);
+            for (int i = 0; i < numStages; ++i)
+                if (active[(size_t) i]) m *= c[(size_t) i].magnitude (f, sr);
             return m;
         }
 
         double bandMagnitude (double f, double sr) const { return band[0].magnitude (f, sr) * band[1].magnitude (f, sr); }
         bool bandActive() const { return loActive || hiActive; }
+
+    private:
+        void set (int i, bool on, const BiquadCoeffs& k) { active[(size_t) i] = on; c[(size_t) i] = on ? k : BiquadCoeffs(); }
+
+        // Stages i and i+1. A band with no gain, or above the usable range, is left out. Tilt = low shelf cut + high shelf boost
+        // (each half the gain) around the same frequency, so the curve crosses 0 dB there.
+        void designBand (int i, int type, double f, double gDb, double q, double sr)
+        {
+            const bool on = std::abs (gDb) > 0.005 && f < sr * 0.475;
+            if (type == bandTilt)
+            {
+                set (i, on, BiquadCoeffs::make (3, sr, f, q, -gDb * 0.5));
+                set (i + 1, on, BiquadCoeffs::make (4, sr, f, q, gDb * 0.5));
+                return;
+            }
+            set (i, on, BiquadCoeffs::make (type == bandPeak ? 2 : (type == bandHiShelf ? 4 : 3), sr, f, q, gDb));
+            set (i + 1, false, {});
+        }
     };
 
     //==============================================================================

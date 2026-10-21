@@ -85,6 +85,15 @@ namespace col
     // Orange -> yellow light ramp used across the whole console (0 = orange, 1 = yellow)
     // Palette mode: 0 = orange -> yellow console light, 1 = deep blue -> deep purple -> yellow (sequencer)
     inline int& rampMode() { static int m = 0; return m; }
+    // The two ends of the light ramp (message thread only). A knob can borrow its own colour pair with RampScope.
+    inline Colour& rampBase() { static Colour c = col::orange; return c; }
+    inline Colour& rampPeak() { static Colour c = col::yellow; return c; }
+    struct RampScope
+    {
+        RampScope (Colour base, Colour peak) : oldBase (rampBase()), oldPeak (rampPeak()) { rampBase() = base; rampPeak() = peak; }
+        ~RampScope() { rampBase() = oldBase; rampPeak() = oldPeak; }
+        Colour oldBase, oldPeak;
+    };
     inline Colour ramp (float t)
     {
         t = jlimit (0.0f, 1.0f, t);
@@ -93,7 +102,7 @@ namespace col
             const Colour blue (0xff2b4cf0), purple (0xff8a2fe0);
             return t < 0.5f ? blue.interpolatedWith (purple, t * 2.0f) : purple.interpolatedWith (col::yellow, (t - 0.5f) * 2.0f);
         }
-        return col::orange.interpolatedWith (col::yellow, t);
+        return rampBase().interpolatedWith (rampPeak(), t);
     }
 
     // Glowing text filled with the orange -> yellow ramp from left to right
