@@ -1,0 +1,120 @@
+name: Build plugins
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # Runs a command; on failure, posts the tail of its output as an annotation so it is visible on the run page
+      - name: Configure (newest installed Visual Studio, x64)
+        shell: pwsh
+        run: |
+          cmake --version
+          cmake -S . -B build -A x64 *>&1 | Tee-Object -FilePath configure.log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = (Get-Content configure.log -Tail 40) -join '%0A'
+            Write-Output "::error title=Configure failed::$tail"
+            exit 1
+          }
+
+      - name: Build VST3 (Release)
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --target PotatoShaper_VST3 --parallel *>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            $errs = (Select-String -Path build.log -Pattern 'error' | Select-Object -First 30 | ForEach-Object { $_.Line }) -join '%0A'
+            Write-Output "::error title=Build failed::$errs"
+            exit 1
+          }
+
+      - name: Upload VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: Potato-Shaper-VST3-Windows-x64
+          path: build/PotatoShaper_artefacts/Release/VST3/
+          if-no-files-found: error
+
+      - name: Validate with pluginval
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_Windows.zip" -OutFile pluginval.zip
+          Expand-Archive pluginval.zip -DestinationPath pluginval
+          $exe = Get-ChildItem -Path pluginval -Recurse -Filter pluginval.exe | Select-Object -First 1
+          & $exe.FullName --strictness-level 10 --validate-in-process --timeout-ms 120000 --validate "build/PotatoShaper_artefacts/Release/VST3/Potato-Shaper.vst3" *>&1 | Tee-Object -FilePath pluginval.log
+          if ($LASTEXITCODE -ne 0) {
+            $tail = (Get-Content pluginval.log -Tail 40) -join '%0A'
+            Write-Output "::error title=pluginval failed::$tail"
+            exit 1
+          }
+          Write-Output "::notice title=pluginval::Passed at strictness level 10"
+
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Configure (Xcode, universal arm64 + x86_64)
+        run: |
+          cmake --version
+          set -o pipefail
+          cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" 2>&1 | tee configure.log || { echo "::error title=Configure failed::$(tail -40 configure.log | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+
+      - name: Build VST3 and AU (Release)
+        run: |
+          set -o pipefail
+          cmake --build build --config Release --target PotatoShaper_VST3 PotatoShaper_AU -- -quiet 2>&1 | tee build.log || { echo "::error title=Build failed::$(grep -i 'error' build.log | head -30 | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+
+      - name: Sign (ad-hoc) and package
+        run: |
+          OUT=build/PotatoShaper_artefacts/Release
+          mkdir -p dist
+          for b in "$OUT/VST3/Potato-Shaper.vst3" "$OUT/AU/Potato-Shaper.component"; do
+            codesign --force --deep --sign - "$b"
+            codesign --verify --verbose "$b"
+          done
+          ARCHS=$(lipo -archs "$OUT/VST3/Potato-Shaper.vst3/Contents/MacOS/Potato-Shaper")
+          echo "::notice title=macOS architectures::$ARCHS"
+          case "$ARCHS" in *arm64*x86_64*|*x86_64*arm64*) ;; *) echo "::error title=Not a universal binary::$ARCHS"; exit 1;; esac
+          # ditto keeps the bundle structure and executable permissions intact
+          ditto -c -k --keepParent "$OUT/VST3/Potato-Shaper.vst3" dist/Potato-Shaper-VST3-macOS.zip
+          ditto -c -k --keepParent "$OUT/AU/Potato-Shaper.component" dist/Potato-Shaper-AU-macOS.zip
+
+      - name: Upload macOS plugins
+        uses: actions/upload-artifact@v4
+        with:
+          name: Potato-Shaper-macOS-Universal
+          path: dist/
+          if-no-files-found: error
+
+      - name: Validate VST3 with pluginval
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+          unzip -q pluginval.zip -d pluginval
+          PV=$(find pluginval -type f -path "*MacOS/pluginval" | head -1)
+          set -o pipefail
+          "$PV" --strictness-level 10 --validate-in-process --timeout-ms 120000 --validate build/PotatoShaper_artefacts/Release/VST3/Potato-Shaper.vst3 2>&1 | tee pluginval.log \
+            || { echo "::error title=pluginval failed (macOS)::$(tail -40 pluginval.log | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+          echo "::notice title=pluginval (macOS)::Passed at strictness level 10"
+
+      - name: Validate AU with auval
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R build/PotatoShaper_artefacts/Release/AU/Potato-Shaper.component ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 2
+          set -o pipefail
+          auval -v aufx PtSh Bpot 2>&1 | tee auval.log || { echo "::error title=auval failed::$(tail -40 auval.log | sed ':a;N;$!ba;s/\n/%0A/g')"; exit 1; }
+          echo "::notice title=auval::AU validation passed"
