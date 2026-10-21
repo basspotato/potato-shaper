@@ -1113,15 +1113,15 @@ public:
             k->placeAt (x, y);
             return k;
         };
-        transKnob = knob (ps::id::trans,   "TRANSIENT", 108, 395, 562, true, Colour (0xffff7212));   // colours from the first mock-up
-        susKnob   = knob (ps::id::sus,     "SUSTAIN",   108, 530, 562, true, Colour (0xff6aa8ff));
-        knob (ps::id::time,    "TIME",       92, 660, 562, false, Colour (0xff9b6bff));
-        knob (ps::id::warmth,  "WARMTH",     92, 790, 562, false, Colour (0xffffd23f));
-        knob (ps::id::makeup,  "MAKEUP",     88, 990, 562);
-        knob (ps::id::mix,     "MIX",        88, 1110, 562);
+        transKnob = knob (ps::id::trans,   "TRANSIENT", 108, 402, 574, true);
+        susKnob   = knob (ps::id::sus,     "SUSTAIN",   108, 537, 574, true);
+        knob (ps::id::time,    "TIME",       92, 667, 574);
+        knob (ps::id::warmth,  "WARMTH",     92, 797, 574);
+        knob (ps::id::makeup,  "MAKEUP",     88, 990, 574);
+        knob (ps::id::mix,     "MIX",        88, 1110, 574);
         knob (ps::id::link,    "LINK",       72, 85, 198);
         knob (ps::id::balance, "BALANCE",    72, 215, 198, true);
-        knob (ps::id::scGain,  "SC GAIN",    72, 85, 424, true);
+        knob (ps::id::scGain,  "SC GAIN",    72, 85, 414, true);
         knob (ps::id::sharp,   "SHARPNESS",  64, 150, 606);
 
         for (Component* c : { (Component*) &display, (Component*) &mode, (Component*) &osRow, (Component*) &msRow, (Component*) &scRow,
@@ -1141,16 +1141,16 @@ public:
         vu.setBounds (926, 64, 250, 150);
         meters.setBounds (926, 226, 250, 218);
         msRow.setBounds (24, 98, 252, 30);
-        scRow.setBounds (24, 324, 252, 30);
-        focusSw.placeAt (215, 440);
+        scRow.setBounds (24, 314, 252, 30);
+        focusSw.placeAt (215, 430);
         listen.setBounds (110, 690, 520, 36);
         clipBtn.setBounds (930, 690, 130, 36);
         bypassBtn.setBounds (1072, 690, 106, 36);
         winRow.setBounds (24, 518, 252, 30);
         // M/S only: the Transient and Sustain knobs edit the Mid or the Side channel
-        tabMid.setBounds (526, 468, 68, 22); tabSide.setBounds (606, 468, 68, 22);   // centred under the display (x 300 to 900)
+        tabMid.setBounds (526, 476, 68, 22); tabSide.setBounds (606, 476, 68, 22);   // top of the knob box, centred under the display
         tabMid.setClickingTogglesState (false); tabSide.setClickingTogglesState (false);
-        tabMid.setTitle ("Edit the Mid channel (Stereo M/S)"); tabSide.setTitle ("Edit the Side channel (Stereo M/S)");
+        tabMid.setTitle ("Edit the Mid channel"); tabSide.setTitle ("Edit the Side channel");
         tabMid.onClick  = [this] { setMsTab (0); };
         tabSide.onClick = [this] { setMsTab (1); };
         setMsTab (0);
@@ -1174,9 +1174,41 @@ public:
         syncAB();
     }
 
+    // Dark HUD tile with a thin orange border and bright corner brackets (Potato-Kicker)
+    static void drawTile (Graphics& g, Rectangle<float> r)
+    {
+        g.setColour (Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (r.translated (0, 4), 9);
+        g.setGradientFill (ColourGradient (Colour (0xff141210), 0, r.getY(), Colour (0xff0b0a09), 0, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 9);
+        g.setGradientFill (ColourGradient (col::line.withAlpha (0.06f), 0, r.getY(), col::line.withAlpha (0.0f), 0, r.getY() + 46, false));
+        g.fillRoundedRectangle (r, 9);
+        g.setGradientFill (ColourGradient (col::orange.withAlpha (0.3f), r.getX(), 0, col::yellow.withAlpha (0.3f), r.getRight(), 0, false));
+        g.drawRoundedRectangle (r.reduced (0.5f), 9, 1.0f);
+        // light strip along the top edge
+        const float lx0 = r.getX() + 26, lx1 = r.getRight() - 26;
+        auto strip = ColourGradient (col::orange.withAlpha (0.0f), lx0, 0, col::yellow.withAlpha (0.0f), lx1, 0, false);
+        strip.addColour (0.15, col::orange.withAlpha (0.9f));
+        strip.addColour (0.85, col::yellow.withAlpha (0.9f));
+        auto glow = strip; glow.multiplyOpacity (0.22f);
+        g.setGradientFill (glow);  g.fillRoundedRectangle (lx0, r.getY() - 1.5f, lx1 - lx0, 6.0f, 3.0f);
+        g.setGradientFill (strip); g.fillRect (lx0, r.getY() + 0.5f, lx1 - lx0, 1.6f);
+        g.setGradientFill (ColourGradient (col::orange.withAlpha (0.95f), r.getX(), 0, col::yellow.withAlpha (0.95f), r.getRight(), 0, false));
+        const float L = 16.0f, t = 2.0f, x0 = r.getX() + 3, y0 = r.getY() + 3, x1 = r.getRight() - 3, y1 = r.getBottom() - 3;
+        g.fillRect (x0, y0, L, t);         g.fillRect (x0, y0, t, L);
+        g.fillRect (x1 - L, y0, L, t);     g.fillRect (x1 - t, y0, t, L);
+        g.fillRect (x0, y1 - t, L, t);     g.fillRect (x0, y1 - L, t, L);
+        g.fillRect (x1 - L, y1 - t, L, t); g.fillRect (x1 - t, y1 - L, t, L);
+    }
+
     void paint (Graphics& g) override
     {
         g.fillAll (col::page);
+        drawTile (g, { 12, 58, 276, 206 });      // stereo
+        drawTile (g, { 12, 276, 276, 198 });     // side-chain
+        drawTile (g, { 12, 484, 276, 176 });     // spectral
+        drawTile (g, { 300, 470, 600, 186 });    // transient / sustain / time / warmth
+        drawTile (g, { 926, 470, 250, 186 });    // makeup / mix
+        drawTile (g, { 12, 668, 1176, 84 });     // listen / preset / clip / bypass
         g.setFont (label (27.0f, 0.12f, true));
         glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (76, 12, 240, 32), Justification::left, 0.3f);
         g.setFont (label (13.0f, 0.2f)); g.setColour (col::inkDim);
@@ -1191,20 +1223,19 @@ public:
             g.setColour (col::line.withAlpha (0.25f)); g.drawHorizontalLine (y + 20, 24, 276);
         };
         section ("STEREO", 70);
-        section ("SIDE-CHAIN", 296);
+        section ("SIDE-CHAIN", 286);
         section (spectral ? "SPECTRAL" : "SPECTRAL  (ENGINE OFF)", 490);
 
         g.setFont (label (12.5f, 0.15f)); g.setColour (col::inkDim);
-        g.drawText ("FOCUS: DRAG NODES   CTRL-DRAG OR WHEEL = WIDTH   DOUBLE-CLICK = RESET", Rectangle<float> (300, 448, 600, 16), Justification::centred, false);
+        g.drawText ("FOCUS: DRAG NODES   CTRL-DRAG OR WHEEL = WIDTH   DOUBLE-CLICK = RESET", Rectangle<float> (300, 47, 600, 16), Justification::centred, false);
 
-        g.setColour (col::line.withAlpha (0.25f)); g.drawHorizontalLine (664, 20, 1180);
         g.setFont (label (14.0f, 0.25f)); g.setColour (col::inkDim);
         g.drawText ("LISTEN", Rectangle<float> (24, 690, 80, 36), Justification::left, false);
         const int pi = proc.currentPreset.load();
         g.setFont (label (12.5f, 0.2f));
         g.drawText (pi < 0 ? String ("PRESET") : "PRESET  " + String (ps::groupNames[pi / ps::presetsPerGroup]).toUpperCase()
                                                    + " " + String (pi % ps::presetsPerGroup + 1).paddedLeft ('0', 2),
-                    Rectangle<float> (644, 671, 266, 16), Justification::centredLeft, false);
+                    Rectangle<float> (644, 676, 266, 16), Justification::centredLeft, false);
         g.setFont (mono (12.0f));
         g.drawText (latencyMs > 0.0f ? "LATENCY " + String (latencyMs, 1) + " ms" : String ("ZERO LATENCY"),
                     Rectangle<float> (926, 448, 250, 16), Justification::centred, false);
@@ -1245,16 +1276,12 @@ public:
     }
 
 private:
-    // The Transient and Sustain knobs follow the tab; L/R mode always edits the shared pair (shown as MID)
+    // The Transient and Sustain knobs follow the tab; L/R mode always edits the shared pair
     void setMsTab (int t)
     {
         msTab = t;
         const bool ms = proc.apvts.getRawParameterValue (ps::id::msMode)->load() > 0.5f, side = ms && t == 1;
-        for (auto* b : { &tabMid, &tabSide })   // always shown; greyed out until Stereo is set to M/S
-        {
-            b->setEnabled (ms);
-            b->setAlpha (ms ? 1.0f : 0.35f);
-        }
+        tabMid.setVisible (ms); tabSide.setVisible (ms);   // M/S mode only
         tabMid.setToggleState (! side, dontSendNotification);
         tabSide.setToggleState (side, dontSendNotification);
         transKnob->bind (proc.apvts.getParameter (side ? ps::id::transSide : ps::id::trans));
