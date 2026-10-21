@@ -929,8 +929,9 @@ public:
             addAndMakeVisible (c);
 
         badge.setBounds (14, 4, 56, 50);
-        mode.setBounds (330, 16, 220, 30);
-        abA.setBounds (590, 16, 40, 30); abB.setBounds (636, 16, 40, 30); abCopy.setBounds (682, 16, 70, 30);
+        // Engine + A/B group (422 wide) centred on the display window below (x 300 to 900)
+        mode.setBounds (389, 16, 220, 30);
+        abA.setBounds (649, 16, 40, 30); abB.setBounds (695, 16, 40, 30); abCopy.setBounds (741, 16, 70, 30);
         osRow.setBounds (966, 16, 170, 30);   // centred on the VU meter (x 926 to 1176)
         display.setBounds (300, 64, 600, 380);
         vu.setBounds (926, 64, 250, 150);
@@ -957,8 +958,8 @@ public:
         g.setFont (label (27.0f, 0.12f, true));
         glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (76, 12, 240, 32), Justification::left, 0.3f);
         g.setFont (label (13.0f, 0.2f)); g.setColour (col::inkDim);
-        g.drawText ("ENGINE", Rectangle<float> (330, 0, 220, 14), Justification::left, false);
-        g.drawText ("A / B", Rectangle<float> (590, 0, 160, 14), Justification::left, false);
+        g.drawText ("ENGINE", Rectangle<float> (389, 0, 220, 14), Justification::left, false);
+        g.drawText ("A / B", Rectangle<float> (649, 0, 162, 14), Justification::left, false);
         g.drawText ("OVERSAMPLE", Rectangle<float> (966, 0, 170, 14), Justification::centred, false);
 
         auto section = [&] (const char* name, int y)
