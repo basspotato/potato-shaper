@@ -1132,7 +1132,7 @@ public:
         bypassBtn.setBounds (1072, 690, 106, 36);
         winRow.setBounds (24, 518, 252, 30);
         // M/S only: the Transient and Sustain knobs edit the Mid or the Side channel
-        tabMid.setBounds (392, 468, 68, 22); tabSide.setBounds (464, 468, 68, 22);
+        tabMid.setBounds (526, 468, 68, 22); tabSide.setBounds (606, 468, 68, 22);   // centred under the display (x 300 to 900)
         tabMid.setClickingTogglesState (false); tabSide.setClickingTogglesState (false);
         tabMid.setTitle ("Edit the Mid channel"); tabSide.setTitle ("Edit the Side channel");
         tabMid.onClick  = [this] { setMsTab (0); };
