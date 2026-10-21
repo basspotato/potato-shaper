@@ -17,7 +17,8 @@ Detection is level independent, so there is no threshold. Turning the track up o
 | Sustain | Gain of the detected tails (±24 dB). |
 | Time | Length of the transient region (2 to 200 ms). A longer Time also starts the sustain later. |
 | Warmth | Saturation applied to the transients only. |
-| Focus display | Drag the five nodes (Lo Cut, Low, Mid, High, Hi Cut) to weight what the detector reacts to. Click a Low, Mid or High node to open its band box, with Freq, Sens and Q knobs and a shape selector (low shelf, peak, high shelf, tilt). Ctrl-drag or the mouse wheel changes width, and double-click resets a node. Click an empty spot to close the box. |
+| Focus display | Drag the five nodes (Lo Cut, Low, Mid, High, Hi Cut) to weight what the detector reacts to. Click a node to open its box, with Freq, Sens and Q knobs. Low, Mid and High have a shape selector (low shelf, peak, high shelf, tilt). Lo Cut and Hi Cut have a slope selector (HP or LP at 6, 12, 24 or 48 dB/oct), where Sens is greyed out and Q sets the corner resonance (greyed out at 6 dB/oct). Ctrl-drag or the mouse wheel changes width, and double-click resets a node. Click an empty spot to close the box. |
+| Presets | 90 EDM factory presets in 9 groups (EDM, Bass, Synth, Kick, Hat, Clap, Vocals, Imaging, Master). Arrows step through them; click the name to open the browser. A dot after the name means it was edited. |
 | Focus switch | **DET** shapes the whole signal. **PROC** also limits processing to the band between Lo Cut and Hi Cut. |
 | Listen | Out, Transient, Sustain, Delta (what the plugin changes) or Sidechain (what the detector hears). |
 | Stereo | L/R or M/S processing, Link (0 to 100 %), and Balance (how much each channel is processed). |

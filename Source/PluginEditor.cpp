@@ -38,10 +38,20 @@ public:
     void setAccent (Colour base, Colour peak) { accent = base; accentPeak = peak; lit = true; repaint(); }
     void setAccent (Colour base) { setAccent (base, base.interpolatedWith (Colours::white, 0.45f)); }
 
+    // A dimmed knob is drawn faded and ignores the mouse (a control that has no effect in the current setting)
+    void setDimmed (bool d)
+    {
+        if (d == dimmed) return;
+        dimmed = d;
+        setInterceptsMouseClicks (! d, false);
+        repaint();
+    }
+
     void paint (Graphics& g) override
     {
-        if (param == nullptr) return;
-        const float w = (float) getWidth(), n = param->getValue();
+        if (param == nullptr && ! dimmed) return;
+        if (dimmed) g.beginTransparencyLayer (0.3f);
+        const float w = (float) getWidth(), n = param != nullptr ? param->getValue() : 0.5f;
         g.setFont (label (size < 70.0f ? 14.5f : 16.0f, 0.1f));
         glowText (g, name, Rectangle<float> (0, 0, w, 17), Justification::centred, col::ink, 0.22f);
         std::unique_ptr<RampScope> scope;
@@ -49,7 +59,9 @@ public:
         drawLitKnob (g, { w * 0.5f, 18.0f + size * 0.5f }, size, n, size >= 84.0f, true, origin);
         g.setColour (dragging ? ramp (n).brighter (0.4f) : Colour (0xffb98c62));
         g.setFont (mono (12.5f));
-        g.drawText (ps::formatValue (param->getParameterID(), value()), Rectangle<float> (0, 18.0f + size, w, 15), Justification::centred, false);
+        g.drawText (param != nullptr ? ps::formatValue (param->getParameterID(), value()) : String ("--"),
+                    Rectangle<float> (0, 18.0f + size, w, 15), Justification::centred, false);
+        if (dimmed) { g.endTransparencyLayer(); return; }
         if (hasKeyboardFocus (false))
         {
             g.setColour (col::amber.withAlpha (0.6f));
@@ -104,7 +116,7 @@ private:
     std::unique_ptr<ParameterAttachment> attach;
     String name;
     float size, origin;
-    bool dragging = false, lit = false;
+    bool dragging = false, lit = false, dimmed = false;
     int startY = 0;
     float startN = 0.0f;
     Colour accent, accentPeak;
@@ -241,11 +253,16 @@ private:
 };
 
 //==============================================================================
-// Four-way band shape selector drawn as curve icons: low shelf, peaking, high shelf, tilt
+// Four-way selector drawn as curve icons: band shape (low shelf, peaking, high shelf, tilt), or the slope of a cut
+// (6 / 12 / 24 / 48 dB/oct high-pass or low-pass)
 class ShapeButtons : public Component
 {
 public:
     static constexpr int cellW = 46, cellH = 34;
+    enum Kind { bandShapes, highPass, lowPass };
+    std::function<void (int)> onChange;
+
+    void setKind (Kind k) { kind = k; setTitle (k == bandShapes ? "Band shape" : "Filter slope"); repaint(); }
 
     ShapeButtons() { setTitle ("Band shape"); setMouseCursor (MouseCursor::PointingHandCursor); }
 
@@ -254,7 +271,12 @@ public:
         attach.reset();
         if (p != nullptr)
         {
-            attach = std::make_unique<ParameterAttachment> (*p, [this] (float v) { selected = roundToInt (v); repaint(); }, nullptr);
+            attach = std::make_unique<ParameterAttachment> (*p, [this] (float v)
+            {
+                selected = roundToInt (v);
+                repaint();
+                if (onChange) onChange (selected);
+            }, nullptr);
             attach->sendInitialUpdate();
         }
     }
@@ -277,13 +299,19 @@ public:
             g.fillRoundedRectangle (r, 3.0f);
             if (! on) { g.setColour (col::line.withAlpha (i == hover ? 0.75f : 0.45f)); g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f); }
 
-            auto gl = glyph (i);
+            auto gl = kind == bandShapes ? glyph (i) : slopeGlyph (i, kind == highPass);
             gl.applyTransform (AffineTransform::translation (r.getCentreX() - 15.0f, r.getCentreY() - 9.0f));
             g.setColour (on ? Colour (0xff1a0b02) : col::ink);
             g.strokePath (gl, PathStrokeType (2.0f, PathStrokeType::curved, PathStrokeType::rounded));
+            if (kind != bandShapes)   // slope number in the empty corner under the flat part of the curve
+            {
+                g.setFont (mono (10.5f));
+                g.drawText (String (6 << i), r.reduced (4.0f, 2.0f), kind == highPass ? Justification::bottomRight : Justification::bottomLeft, false);
+            }
         }
+        const auto& names = kind == bandShapes ? ps::bandTypeNames : kind == highPass ? ps::hpNames : ps::lpNames;
         g.setFont (label (12.5f, 0.2f)); g.setColour (col::inkDim);
-        g.drawText (ps::bandTypeNames[jlimit (0, 3, selected)], Rectangle<float> (0, (float) cellH + 4, (float) (cellW * 4 - 5), 14), Justification::centred, false);
+        g.drawText (names[jlimit (0, 3, selected)], Rectangle<float> (0, (float) cellH + 4, (float) (cellW * 4 - 5), 14), Justification::centred, false);
     }
 
     void mouseMove (const MouseEvent& e) override { setHover (cellAt (e)); }
@@ -309,16 +337,28 @@ private:
         return p;
     }
 
+    // Steeper slope = shorter rise into the corner at x = 20 (mirrored for low-pass)
+    static Path slopeGlyph (int slope, bool hp)
+    {
+        const float span = std::array<float, 4> { 17.0f, 11.0f, 7.0f, 4.0f }[(size_t) jlimit (0, 3, slope)];
+        Path p;
+        p.startNewSubPath (20.0f - span, 17); p.cubicTo (20.0f - span * 0.35f, 9, 17, 4, 23, 4); p.lineTo (30, 4);
+        if (! hp) p.applyTransform (AffineTransform::scale (-1.0f, 1.0f).translated (30.0f, 0.0f));
+        return p;
+    }
+
     int cellAt (const MouseEvent& e) const { return e.y <= cellH && e.x >= 0 && e.x < cellW * 4 ? e.x / cellW : -1; }
     void setHover (int i) { if (i != hover) { hover = i; repaint(); } }
 
     std::unique_ptr<ParameterAttachment> attach;
     int selected = 0, hover = -1;
+    Kind kind = bandShapes;
 };
 
 //==============================================================================
-// The band box that opens over the display when a band node is clicked (as in oeksound Spiff):
-// frequency, sensitivity and Q knobs, plus the band shape selector on the right.
+// The band box that opens over the display when a node is clicked (as in oeksound Spiff): frequency, sensitivity and
+// Q knobs, plus the band shape selector on the right. For the lo / hi cut it shows the slope instead; SENS is greyed
+// out there (a cut has no gain) and so is Q at 6 dB/oct (a first-order filter has no resonance).
 class BandPanel : public Component
 {
 public:
@@ -332,13 +372,18 @@ public:
         sens.setBounds (204, 6, 92, 96);
         q.setBounds (304, 6, 92, 96);
         shapes.setBounds (402, 22, ShapeButtons::cellW * 4, ShapeButtons::cellH + 20);
+        shapes.onChange = [this] (int v) { q.setDimmed (kind != ShapeButtons::bandShapes && v == ps::slope6); };
         setTitle ("Band settings");
     }
 
-    void show (const String& title, Colour colour, RangedAudioParameter* f, RangedAudioParameter* g, RangedAudioParameter* qp, RangedAudioParameter* type)
+    void show (const String& title, Colour colour, RangedAudioParameter* f, RangedAudioParameter* g, RangedAudioParameter* qp,
+               RangedAudioParameter* type, ShapeButtons::Kind k)
     {
-        name = title; accent = colour;
-        for (auto* k : { &freq, &sens, &q }) k->setAccent (colour);
+        name = title; accent = colour; kind = k;
+        for (auto* kn : { &freq, &sens, &q }) kn->setAccent (colour);
+        sens.setDimmed (g == nullptr);
+        q.setDimmed (false);
+        shapes.setKind (k);
         freq.bind (f); sens.bind (g); q.bind (qp); shapes.bind (type);
         repaint();
     }
@@ -351,14 +396,15 @@ public:
         g.setColour (accent); g.fillRoundedRectangle (0.0f, 12.0f, 4.0f, (float) getHeight() - 24.0f, 2.0f);
         drawLed (g, Rectangle<float> (11, 11).withCentre ({ 25.0f, 46.0f }), true);
         g.setFont (label (20.0f, 0.2f, true));
-        glowText (g, name, Rectangle<float> (38, 32, 62, 22), Justification::centredLeft, accent, 0.22f);
+        glowText (g, name, Rectangle<float> (38, 32, 66, 22), Justification::centredLeft, accent, 0.22f);
         g.setFont (label (12.5f, 0.3f)); g.setColour (col::inkDim);
-        g.drawText ("BAND", Rectangle<float> (38, 52, 62, 14), Justification::centredLeft, false);
+        g.drawText (kind == ShapeButtons::bandShapes ? "BAND" : "FILTER", Rectangle<float> (38, 52, 66, 14), Justification::centredLeft, false);
     }
 
 private:
     Knob freq, sens, q;
     ShapeButtons shapes;
+    ShapeButtons::Kind kind = ShapeButtons::bandShapes;
     String name;
     Colour accent { Colours::white };
 };
@@ -520,27 +566,28 @@ public:
     explicit FocusDisplay (PotatoShaperProcessor& p) : proc (p)
     {
         auto get = [&] (const char* pid) { return p.apvts.getParameter (pid); };
-        nodes[0] = { get (ps::id::loCut), nullptr, nullptr, nullptr, "LO CUT", Colour (0xffd9dde2) };
+        nodes[0] = { get (ps::id::loCut), nullptr, get (ps::id::loQ), get (ps::id::loSlope), "LO CUT", Colour (0xffd9dde2) };
         nodes[1] = { get (ps::id::lowF), get (ps::id::lowG), get (ps::id::lowQ), get (ps::id::lowType), "LOW", Colour (0xff9b6bff) };
         nodes[2] = { get (ps::id::midF), get (ps::id::midG), get (ps::id::midQ), get (ps::id::midType), "MID", Colour (0xff6aa8ff) };
         nodes[3] = { get (ps::id::highF), get (ps::id::highG), get (ps::id::highQ), get (ps::id::highType), "HIGH", Colour (0xffffd23f) };
-        nodes[4] = { get (ps::id::hiCut), nullptr, nullptr, nullptr, "HI CUT", Colour (0xffd9dde2) };
+        nodes[4] = { get (ps::id::hiCut), nullptr, get (ps::id::hiQ), get (ps::id::hiSlope), "HI CUT", Colour (0xffd9dde2) };
         for (auto& s : specDb) s = -120.0f;
         setTitle ("Focus display");
         addChildComponent (panel);
     }
 
-    // Opens the band box for node 1..3 (low, mid, high), or closes it for anything else
+    // Opens the box for node 0..4 (lo cut, low, mid, high, hi cut), or closes it for anything else
     void selectBand (int i)
     {
-        if (i < 1 || i > 3) i = -1;
+        if (i < 0 || i > 4) i = -1;
         if (i == selected) return;
         selected = i;
         if (i < 0) panel.setVisible (false);
         else
         {
             auto& n = nodes[i];
-            panel.show (n.name, n.colour, n.freq, n.gain, n.q, n.type);
+            panel.show (n.name, n.colour, n.freq, n.gain, n.q, n.type,
+                        i == 0 ? ShapeButtons::highPass : i == 4 ? ShapeButtons::lowPass : ShapeButtons::bandShapes);
             panelTop = false;
             placePanel();
             panel.setVisible (true);
@@ -673,8 +720,9 @@ public:
         {
             auto& nd = nodes[ri];
             String t = nd.name + "  " + ps::fmtHz (nodeFreq (ri));
-            if (nd.gain != nullptr) t << "  " << ps::fmtDb (nd.gain->convertFrom0to1 (nd.gain->getValue()))
-                                      << "  Q " << String (nd.q->convertFrom0to1 (nd.q->getValue()), 2);
+            if (nd.gain != nullptr) t << "  " << ps::fmtDb (nd.gain->convertFrom0to1 (nd.gain->getValue()));
+            else t << "  " << nd.type->getCurrentValueAsText();
+            t << "  Q " << String (nd.q->convertFrom0to1 (nd.q->getValue()), 2);
             g.setFont (mono (12.0f)); g.setColour (col::yellow);
             g.drawText (t, Rectangle<float> (10, plotTop + 2, 320, 14), Justification::left, false);
         }
@@ -888,6 +936,143 @@ private:
 };
 
 //==============================================================================
+// Preset name window (Potato-Kicker LED window style); clicking opens the browser
+class LedWindow : public Button
+{
+public:
+    LedWindow() : Button ("window") {}
+    void setText (const String& s) { if (s != txt) { txt = s; repaint(); } }
+    void paintButton (Graphics& g, bool over, bool) override
+    {
+        const auto r = getLocalBounds().toFloat().reduced (1.0f);
+        insetWindow (g, r);
+        if (over) { g.setColour (Colours::white.withAlpha (0.03f)); g.fillRoundedRectangle (r, 3); }
+        g.setFont (mono (16.0f));
+        glowText (g, txt, r.withTrimmedLeft (10).withTrimmedRight (8), Justification::centredLeft, col::yellow, 0.25f);
+    }
+private:
+    String txt;
+};
+
+class PresetArrow : public Button
+{
+public:
+    PresetArrow (bool leftArrow, String t) : Button (t), left (leftArrow) { setTitle (t); }
+    void paintButton (Graphics& g, bool over, bool down) override
+    {
+        auto r = getLocalBounds().toFloat().reduced (1.0f);
+        if (down) r.translate (0, 1);
+        g.setGradientFill (ColourGradient (Colour (over ? 0xff261d16 : 0xff1d1713), 0, r.getY(), Colour (0xff0e0b09), 0, r.getBottom(), false));
+        g.fillRoundedRectangle (r, 3);
+        g.setColour (col::line.withAlpha (over ? 0.75f : 0.45f)); g.drawRoundedRectangle (r.reduced (0.5f), 3, 1);
+        const auto c = r.getCentre();
+        Path tri;
+        if (left) tri.addTriangle (c.x - 5, c.y, c.x + 4, c.y - 5.5f, c.x + 4, c.y + 5.5f);
+        else      tri.addTriangle (c.x + 5, c.y, c.x - 4, c.y - 5.5f, c.x - 4, c.y + 5.5f);
+        g.setColour (col::ink); g.fillPath (tri);
+    }
+private:
+    bool left;
+};
+
+//==============================================================================
+// Preset browser overlay: groups on the left, the group's 10 presets on the right
+class PresetBrowser : public Component
+{
+public:
+    std::function<void (int)> onPick;
+
+    void show (int currentPreset)
+    {
+        current = currentPreset;
+        group = jmax (0, currentPreset) / ps::presetsPerGroup;
+        setVisible (true);
+        toFront (false);
+        repaint();
+    }
+
+    void paint (Graphics& g) override
+    {
+        const auto b = getLocalBounds().toFloat();
+        g.setColour (Colours::black.withAlpha (0.5f)); g.fillRoundedRectangle (b.translated (0, 12), 12);
+        g.setColour (Colour (0xf7080809)); g.fillRoundedRectangle (b, 12);
+        g.setColour (col::line.withAlpha (0.45f)); g.drawRoundedRectangle (b.reduced (0.5f), 12, 1);
+        g.setColour (col::line.withAlpha (0.2f)); g.drawVerticalLine (210, 0, b.getBottom());
+
+        for (int i = 0; i < ps::numGroups; ++i)
+        {
+            const auto r = groupRect (i);
+            const String name = String (ps::groupNames[i]).toUpperCase();
+            if (i == group) { g.setColour (Colour (0xff1e1006)); g.fillRect (r); }
+            g.setFont (label (16.0f, 0.12f));
+            if (i == group) glowText (g, name, r.withTrimmedLeft (22), Justification::centredLeft, col::amber, 0.2f);
+            else { g.setColour (col::inkDim); g.drawText (name, r.withTrimmedLeft (22), Justification::centredLeft, false); }
+            g.setColour (col::inkDim.withAlpha (0.6f)); g.setFont (mono (11.5f));
+            g.drawText (String (ps::presetsPerGroup), r.withTrimmedRight (20), Justification::centredRight, false);
+        }
+
+        g.setColour (col::ink); g.setFont (label (17.0f, 0.22f));
+        g.drawText (String (ps::groupNames[group]).toUpperCase(), Rectangle<float> (232, 18, 400, 28), Justification::centredLeft, false);
+        const auto xr = closeRect();
+        g.setColour (Colour (0xff1d1d20)); g.fillRoundedRectangle (xr, 4);
+        g.setColour (col::ink); g.drawLine (xr.getX() + 10, xr.getY() + 10, xr.getRight() - 10, xr.getBottom() - 10, 1.6f);
+        g.drawLine (xr.getRight() - 10, xr.getY() + 10, xr.getX() + 10, xr.getBottom() - 10, 1.6f);
+
+        for (int i = 0; i < ps::presetsPerGroup; ++i)
+        {
+            const int idx = group * ps::presetsPerGroup + i;
+            const auto& p = ps::presets[idx];
+            const auto r = presetRect (i);
+            const bool on = idx == current, over = idx == hoverIdx;
+            g.setColour (on ? Colour (0xff1b150c) : over ? Colour (0xff1a1a1d) : Colour (0xff121214)); g.fillRoundedRectangle (r, 6);
+            g.setColour (on ? col::amber : col::line.withAlpha (0.2f)); g.drawRoundedRectangle (r.reduced (0.5f), 6, 1);
+            g.setColour (col::amber); g.setFont (mono (15.0f));
+            g.drawText (String (i + 1).paddedLeft ('0', 2), Rectangle<float> (r.getX() + 14, r.getY(), 30, r.getHeight()), Justification::centredLeft, false);
+            g.setColour (col::ink); g.setFont (label (16.5f, 0.05f));
+            g.drawText (p.name, Rectangle<float> (r.getX() + 50, r.getY() + 8, r.getWidth() - 56, 20), Justification::centredLeft, false);
+            g.setColour (col::inkDim); g.setFont (mono (11.5f));
+            const String dot (CharPointer_UTF8 (" \xc2\xb7 "));
+            String meta = ps::modeNames[p.mode] + dot + "T " + ps::fmtDb (p.trans) + dot + "S " + ps::fmtDb (p.sus)
+                        + dot + ps::formatValue (ps::id::time, p.time);
+            if (p.msMode == 1) meta << dot << (p.balance < 0 ? "MID" : p.balance > 0 ? "SIDE" : "M/S");
+            g.drawText (meta, Rectangle<float> (r.getX() + 50, r.getY() + 28, r.getWidth() - 56, 14), Justification::centredLeft, false);
+        }
+    }
+
+    void mouseMove (const MouseEvent& e) override
+    {
+        int h = -1;
+        for (int i = 0; i < ps::presetsPerGroup; ++i)
+            if (presetRect (i).contains (e.position)) h = group * ps::presetsPerGroup + i;
+        if (h != hoverIdx) { hoverIdx = h; repaint(); }
+    }
+
+    void mouseExit (const MouseEvent&) override { if (hoverIdx >= 0) { hoverIdx = -1; repaint(); } }
+
+    void mouseDown (const MouseEvent& e) override
+    {
+        if (closeRect().contains (e.position)) { setVisible (false); return; }
+        for (int i = 0; i < ps::numGroups; ++i)
+            if (groupRect (i).contains (e.position)) { group = i; repaint(); return; }
+        for (int i = 0; i < ps::presetsPerGroup; ++i)
+            if (presetRect (i).contains (e.position))
+            {
+                current = group * ps::presetsPerGroup + i;
+                if (onPick) onPick (current);
+                repaint();
+                return;
+            }
+    }
+
+private:
+    Rectangle<float> groupRect (int i) const  { return { 0, 16.0f + (float) i * 35.0f, 210, 35 }; }
+    Rectangle<float> presetRect (int i) const { return { 230.0f + (float) (i % 2) * 333.0f, 60.0f + (float) (i / 2) * 58.0f, 325, 50 }; }
+    Rectangle<float> closeRect() const        { return { (float) getWidth() - 50.0f, 16, 30, 30 }; }
+
+    int group = 0, current = -1, hoverIdx = -1;
+};
+
+//==============================================================================
 class PanelContent : public Component
 {
 public:
@@ -925,7 +1110,8 @@ public:
         for (Component* c : { (Component*) &display, (Component*) &mode, (Component*) &osRow, (Component*) &msRow, (Component*) &scRow,
                               (Component*) &winRow, (Component*) &listen, (Component*) &clipBtn, (Component*) &bypassBtn,
                               (Component*) &focusSw, (Component*) &vu, (Component*) &meters, (Component*) &badge,
-                              (Component*) &abA, (Component*) &abB, (Component*) &abCopy })
+                              (Component*) &abA, (Component*) &abB, (Component*) &abCopy,
+                              (Component*) &presetPrev, (Component*) &presetWin, (Component*) &presetNext })
             addAndMakeVisible (c);
 
         badge.setBounds (14, 4, 56, 50);
@@ -943,6 +1129,17 @@ public:
         clipBtn.setBounds (930, 690, 130, 36);
         bypassBtn.setBounds (1072, 690, 106, 36);
         winRow.setBounds (24, 518, 252, 30);
+        presetPrev.setBounds (644, 690, 30, 36);
+        presetWin.setBounds (677, 690, 200, 36);
+        presetNext.setBounds (880, 690, 30, 36);
+
+        presetWin.setTitle ("Preset - open preset browser");
+        presetPrev.onClick = [this] { const int c = proc.currentPreset.load(); pickPreset (c < 0 ? ps::numPresets - 1 : (c + ps::numPresets - 1) % ps::numPresets); };
+        presetNext.onClick = [this] { pickPreset ((proc.currentPreset.load() + 1) % ps::numPresets); };
+        presetWin.onClick  = [this] { browser.show (proc.currentPreset.load()); };
+        addChildComponent (browser);
+        browser.setBounds (150, 190, 900, 430);
+        browser.onPick = [this] (int i) { pickPreset (i); };
 
         abA.setClickingTogglesState (false); abB.setClickingTogglesState (false);
         abA.onClick = [this] { proc.selectAB (0); syncAB(); };
@@ -978,9 +1175,14 @@ public:
         g.setColour (col::line.withAlpha (0.25f)); g.drawHorizontalLine (664, 20, 1180);
         g.setFont (label (14.0f, 0.25f)); g.setColour (col::inkDim);
         g.drawText ("LISTEN", Rectangle<float> (24, 690, 80, 36), Justification::left, false);
+        const int pi = proc.currentPreset.load();
+        g.setFont (label (12.5f, 0.2f));
+        g.drawText (pi < 0 ? String ("PRESET") : "PRESET  " + String (ps::groupNames[pi / ps::presetsPerGroup]).toUpperCase()
+                                                   + " " + String (pi % ps::presetsPerGroup + 1).paddedLeft ('0', 2),
+                    Rectangle<float> (644, 671, 266, 16), Justification::centredLeft, false);
         g.setFont (mono (12.0f));
         g.drawText (latencyMs > 0.0f ? "LATENCY " + String (latencyMs, 1) + " ms" : String ("ZERO LATENCY"),
-                    Rectangle<float> (650, 690, 200, 36), Justification::centredLeft, false);
+                    Rectangle<float> (926, 448, 250, 16), Justification::centred, false);
         drawLed (g, Rectangle<float> (11, 11).withCentre ({ 918.0f, 708.0f }), clipLit > 0);
     }
 
@@ -1005,14 +1207,22 @@ public:
         const float lat = 1000.0f * (float) proc.getLatencySamples() / (float) jmax (1.0, proc.getRate());
         int clip = clipLit;
         if (proc.clipped.exchange (false)) clip = 15; else if (clip > 0) --clip;
-        if (spec != spectral || std::abs (lat - latencyMs) > 0.05f || clip != clipLit)
+        if (spec != spectral || std::abs (lat - latencyMs) > 0.05f || clip != clipLit || proc.currentPreset.load() != shownPreset)
         {
-            spectral = spec; latencyMs = lat; clipLit = clip;
+            spectral = spec; latencyMs = lat; clipLit = clip; shownPreset = proc.currentPreset.load();
             repaint();
         }
+        const int pi = proc.currentPreset.load();
+        presetWin.setText (pi < 0 ? String ("INIT") : String (ps::presets[pi].name) + (proc.presetIsModified() ? String (CharPointer_UTF8 (" \xe2\x80\xa2")) : String()));
     }
 
 private:
+    void pickPreset (int i)
+    {
+        proc.loadPreset (i);
+        if (browser.isVisible()) browser.show (i);
+    }
+
     void syncAB()
     {
         abA.setToggleState (proc.getABSlot() == 0, dontSendNotification);
@@ -1029,6 +1239,10 @@ private:
     LedMeters meters;
     PotatoBadge badge;
     SquareButton abA { "A" }, abB { "B" }, abCopy { "COPY" };
+    PresetArrow presetPrev { true, "Previous preset" }, presetNext { false, "Next preset" };
+    LedWindow presetWin;
+    PresetBrowser browser;
+    int shownPreset = -2;
     bool spectral = false;
     float latencyMs = 0.0f;
     int clipLit = 0;

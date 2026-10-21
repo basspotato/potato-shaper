@@ -29,8 +29,11 @@ PotatoShaperProcessor::PotatoShaperProcessor()
     namespace id = ps::id;
     raw = { r (id::mode), r (id::trans), r (id::sus), r (id::time), r (id::warmth), r (id::loCut), r (id::hiCut), r (id::lowF),
             r (id::lowG), r (id::lowQ), r (id::midF), r (id::midG), r (id::midQ), r (id::highF), r (id::highG), r (id::highQ), r (id::lowType), r (id::midType), r (id::highType),
+            r (id::loQ), r (id::hiQ), r (id::loSlope), r (id::hiSlope),
             r (id::focusProc), r (id::listen), r (id::msMode), r (id::link), r (id::balance), r (id::extSc), r (id::scGain),
             r (id::makeup), r (id::mix), r (id::clip), r (id::os), r (id::window), r (id::sharp), r (id::bypass) };
+    for (int i = 0; i < ps::numPresetParams; ++i)
+        presetParams[i] = apvts.getParameter (ps::presetParamIds[i]);
 }
 
 bool PotatoShaperProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -56,7 +59,8 @@ ps::EngineParams PotatoShaperProcessor::readParams() const
     p.warmth  = raw.warmth->load() * 0.01f;
     p.focus   = { raw.loCut->load(), raw.hiCut->load(), raw.lowF->load(), raw.lowG->load(), raw.lowQ->load(),
                   raw.midF->load(), raw.midG->load(), raw.midQ->load(), raw.highF->load(), raw.highG->load(), raw.highQ->load(),
-                  (int) raw.lowType->load(), (int) raw.midType->load(), (int) raw.highType->load() };
+                  (int) raw.lowType->load(), (int) raw.midType->load(), (int) raw.highType->load(),
+                  raw.loQ->load(), raw.hiQ->load(), (int) raw.loSlope->load(), (int) raw.hiSlope->load() };
     p.focusProc = raw.focusProc->load() > 0.5f;
     p.link    = raw.link->load() * 0.01f;
     p.balance = raw.balance->load() * 0.01f;
@@ -327,9 +331,39 @@ void PotatoShaperProcessor::copyABToOther()
     abStates[1 - abSlot] = apvts.copyState();
 }
 
+void PotatoShaperProcessor::loadPreset (int index, bool asUserGesture)
+{
+    index = juce::jlimit (0, ps::numPresets - 1, index);
+    currentPreset = index;
+    float v[ps::numPresetParams];
+    ps::presetValues (ps::presets[index], v);
+
+    // Gestures are only sent for presets chosen in the editor; host-driven changes just update the values
+    for (int i = 0; i < ps::numPresetParams; ++i)
+    {
+        auto* prm = presetParams[i];
+        if (asUserGesture) prm->beginChangeGesture();
+        prm->setValueNotifyingHost (prm->convertTo0to1 (v[i]));
+        if (asUserGesture) prm->endChangeGesture();
+    }
+}
+
+bool PotatoShaperProcessor::presetIsModified() const
+{
+    const int idx = currentPreset.load();
+    if (idx < 0) return false;
+    float v[ps::numPresetParams];
+    ps::presetValues (ps::presets[idx], v);
+    for (int i = 0; i < ps::numPresetParams; ++i)
+        if (std::abs (presetParams[i]->getValue() - presetParams[i]->convertTo0to1 (v[i])) > 0.002f)
+            return true;
+    return false;
+}
+
 void PotatoShaperProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     auto state = apvts.copyState();
+    state.setProperty ("preset", currentPreset.load(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary (*xml, destData);
 }
 
@@ -337,7 +371,11 @@ void PotatoShaperProcessor::setStateInformation (const void* data, int sizeInByt
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
-            apvts.replaceState (juce::ValueTree::fromXml (*xml));
+        {
+            auto tree = juce::ValueTree::fromXml (*xml);
+            currentPreset = juce::jlimit (-1, ps::numPresets - 1, (int) tree.getProperty ("preset", -1));
+            apvts.replaceState (tree);
+        }
 }
 
 juce::AudioProcessorEditor* PotatoShaperProcessor::createEditor() { return new PotatoShaperEditor (*this); }

@@ -33,6 +33,12 @@ namespace ps
             curve.design (p.focus, sr);
             for (int s = 0; s < FocusCurve::numStages; ++s)   // a stage that was off starts from silence when it comes back
                 if (! curve.active[(size_t) s]) for (auto& ch : det) ch[s].reset();
+            for (int s = 0; s < FocusCurve::cutStages; ++s)
+                for (auto& ch : bandF)
+                {
+                    if (! curve.active[(size_t) (FocusCurve::loStage + s)]) ch[s].reset();
+                    if (! curve.active[(size_t) (FocusCurve::hiStage + s)]) ch[FocusCurve::cutStages + s].reset();
+                }
             const auto dc = Detector::coeffs (p.timeMs, sr, true);
             const float aGain = onePole (0.0002, sr);
             const bool useBand = p.focusProc && curve.bandActive();
@@ -71,7 +77,11 @@ namespace ps
                     const float x = io[ch][i];
                     float b = x;
                     if (useBand)
-                        b = bandF[ch][1].process (curve.band[1], bandF[ch][0].process (curve.band[0], x));
+                        for (int k = 0; k < FocusCurve::cutStages; ++k)
+                        {
+                            if (curve.active[(size_t) (FocusCurve::loStage + k)]) b = bandF[ch][k].process (curve.c[(size_t) (FocusCurve::loStage + k)], b);
+                            if (curve.active[(size_t) (FocusCurve::hiStage + k)]) b = bandF[ch][FocusCurve::cutStages + k].process (curve.c[(size_t) (FocusCurve::hiStage + k)], b);
+                        }
 
                     float y;
                     switch (p.listen)
@@ -98,7 +108,7 @@ namespace ps
         double sr = 44100.0;
         FocusCurve curve;
         Biquad det[maxCh][FocusCurve::numStages];
-        Biquad bandF[maxCh][2];
+        Biquad bandF[maxCh][2 * FocusCurve::cutStages];   // the cuts again, on the audio, for Focus PROC
         Detector env[maxCh + 1];   // per channel plus the linked (mono) detector
         float gainDb[maxCh] {};
     };

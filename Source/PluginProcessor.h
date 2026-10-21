@@ -4,6 +4,7 @@
 #include "Params.h"
 #include "CleanEngine.h"
 #include "SpectralEngine.h"
+#include "Presets.h"
 
 class PotatoShaperProcessor : public juce::AudioProcessor
 {
@@ -41,6 +42,11 @@ public:
     void selectAB (int slot);
     void copyABToOther();
     int getABSlot() const { return abSlot; }
+
+    // Factory presets (message thread). -1 = INIT, no preset loaded
+    void loadPreset (int index, bool asUserGesture = true);
+    bool presetIsModified() const;
+    std::atomic<int> currentPreset { -1 };
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -87,13 +93,15 @@ private:
     std::array<std::atomic<float>, scopeSize> scope {};
     std::atomic<int> scopePos { 0 };
 
+    juce::RangedAudioParameter* presetParams[ps::numPresetParams] {};
+
     juce::ValueTree abStates[2];
     int abSlot = 0;
 
     struct Raw
     {
         std::atomic<float> *mode, *trans, *sus, *time, *warmth, *loCut, *hiCut, *lowF, *lowG, *lowQ, *midF, *midG, *midQ,
-                           *highF, *highG, *highQ, *lowType, *midType, *highType, *focusProc, *listen, *msMode, *link, *balance, *extSc, *scGain,
+                           *highF, *highG, *highQ, *lowType, *midType, *highType, *loQ, *hiQ, *loSlope, *hiSlope, *focusProc, *listen, *msMode, *link, *balance, *extSc, *scGain,
                            *makeup, *mix, *clip, *os, *window, *sharp, *bypass;
     } raw {};
 

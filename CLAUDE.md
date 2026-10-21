@@ -41,6 +41,7 @@ Source/
   SpectralEngine.h  STFT engine: per-bin detection, latency = FFT size
   PluginProcessor.* routing, M/S, side-chain, mix, makeup, warmth + safety clip (oversampled), meters, A/B
   PluginEditor.cpp  GUI: knobs, Focus display, meters
+  Presets.h         90 factory presets (9 EDM groups x 10), builder syntax
   Look.h            Potato-Kicker palette, fonts, knob drawing (shared look with potato-bass / potato-kicker)
 tests/OfflineTest.cpp  null, attack/tail, level-independence, steady-tone distortion, clip checks; --snapshot renders the GUI to PNG
 ```

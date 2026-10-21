@@ -121,7 +121,7 @@ namespace
 }
 
 // Renders the editor with live audio running into a PNG (used for GUI previews):
-// PotatoShaperTests --snapshot file.png [spectral] [band=1..3] [type=0..3]
+// PotatoShaperTests --snapshot file.png [spectral] [band=0..4] [type=0..3]   (band 0 / 4 = lo / hi cut, type = slope)
 int snapshot (const juce::File& file, bool spectral, int band, int bandType)
 {
     PotatoShaperProcessor p;
@@ -131,7 +131,8 @@ int snapshot (const juce::File& file, bool spectral, int band, int bandType)
     set (ps::id::trans, 6.5f); set (ps::id::sus, -3.0f); set (ps::id::time, 18.0f); set (ps::id::warmth, 30.0f);
     set (ps::id::loCut, 30.0f); set (ps::id::hiCut, 14000.0f); set (ps::id::lowG, 5.0f); set (ps::id::midG, -4.0f); set (ps::id::highG, 4.0f);
     set (ps::id::makeup, 1.0f);
-    if (band >= 1 && bandType >= 0) set (band == 1 ? ps::id::lowType : (band == 2 ? ps::id::midType : ps::id::highType), (float) bandType);
+    const char* typeIds[5] { ps::id::loSlope, ps::id::lowType, ps::id::midType, ps::id::highType, ps::id::hiSlope };
+    if (band >= 0 && band <= 4 && bandType >= 0) set (typeIds[band], (float) bandType);
     p.prepareToPlay (sr, block);
 
     auto hits = makeHits (0.3f);

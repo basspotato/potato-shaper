@@ -40,6 +40,12 @@ namespace ps
                     b0 = A * ((A + 1) - (A - 1) * cw + s); b1 = 2 * A * ((A - 1) - (A + 1) * cw); b2 = A * ((A + 1) - (A - 1) * cw - s);
                     a0 = (A + 1) + (A - 1) * cw + s; a1 = -2 * ((A - 1) + (A + 1) * cw); a2 = (A + 1) + (A - 1) * cw - s; break;
                 }
+                case 5: // first-order high-pass (bilinear)
+                case 6: // first-order low-pass
+                {
+                    const double k = std::tan (w * 0.5), n = 1.0 / (1.0 + k);
+                    return type == 5 ? BiquadCoeffs { n, -n, 0, (k - 1) * n, 0 } : BiquadCoeffs { k * n, k * n, 0, (k - 1) * n, 0 };
+                }
                 default: // high shelf
                 {
                     const double s = 2 * std::sqrt (A) * alpha;
@@ -71,22 +77,26 @@ namespace ps
     };
 
     //==============================================================================
-    // The Focus curve: lo cut (24 dB/oct), three bands (each a low shelf, bell, high shelf or tilt shelf) and hi cut (24 dB/oct).
-    // It weights what the detector listens to. The same coefficients draw the curve in the editor.
+    // The Focus curve: lo cut, three bands (each a low shelf, bell, high shelf or tilt shelf) and hi cut. The cuts are
+    // Butterworth at 6, 12, 24 or 48 dB/oct; their Q scales the most resonant section. It weights what the detector listens to,
+    // and with Focus PROC the two cuts also limit where processing applies. The same coefficients draw the curve in the editor.
     enum BandType { bandLoShelf, bandPeak, bandHiShelf, bandTilt };
+    enum CutSlope { slope6, slope12, slope24, slope48 };
 
     struct FocusSettings
     {
         float loCut = 20, hiCut = 20000, lowF = 90, lowG = 0, lowQ = 0.71f, midF = 800, midG = 0, midQ = 0.71f, highF = 6000, highG = 0, highQ = 0.71f;
         int lowType = bandLoShelf, midType = bandPeak, highType = bandHiShelf;
+        float loQ = 0.71f, hiQ = 0.71f;
+        int loSlope = slope24, hiSlope = slope24;
     };
 
     struct FocusCurve
     {
-        static constexpr int numStages = 10;   // lo cut x2, three bands x2 (tilt uses both), hi cut x2
+        static constexpr int cutStages = 4, loStage = 0, hiStage = 10;
+        static constexpr int numStages = 14;   // lo cut x4, three bands x2 (tilt uses both), hi cut x4
         std::array<BiquadCoeffs, numStages> c;
         std::array<bool, numStages> active {};
-        std::array<BiquadCoeffs, 2> band;      // 12 dB/oct lo/hi cut used when Focus also limits processing
         bool loActive = false, hiActive = false;
 
         void design (const FocusSettings& s, double sr)
@@ -94,15 +104,11 @@ namespace ps
             const double nyq = sr * 0.5;
             loActive = s.loCut > 20.5f;
             hiActive = s.hiCut < 19900.0f && s.hiCut < nyq * 0.95;
-            set (0, loActive, BiquadCoeffs::make (0, sr, s.loCut, 0.5412, 0));
-            set (1, loActive, BiquadCoeffs::make (0, sr, s.loCut, 1.3066, 0));
-            designBand (2, s.lowType,  s.lowF,  s.lowG,  s.lowQ,  sr);
-            designBand (4, s.midType,  s.midF,  s.midG,  s.midQ,  sr);
-            designBand (6, s.highType, s.highF, s.highG, s.highQ, sr);
-            set (8, hiActive, BiquadCoeffs::make (1, sr, s.hiCut, 0.5412, 0));
-            set (9, hiActive, BiquadCoeffs::make (1, sr, s.hiCut, 1.3066, 0));
-            band[0] = loActive ? BiquadCoeffs::make (0, sr, s.loCut, 0.7071, 0) : BiquadCoeffs();
-            band[1] = hiActive ? BiquadCoeffs::make (1, sr, s.hiCut, 0.7071, 0) : BiquadCoeffs();
+            designCut (loStage, loActive, true,  s.loSlope, s.loCut, s.loQ, sr);
+            designBand (4, s.lowType,  s.lowF,  s.lowG,  s.lowQ,  sr);
+            designBand (6, s.midType,  s.midF,  s.midG,  s.midQ,  sr);
+            designBand (8, s.highType, s.highF, s.highG, s.highQ, sr);
+            designCut (hiStage, hiActive, false, s.hiSlope, s.hiCut, s.hiQ, sr);
         }
 
         double magnitude (double f, double sr) const
@@ -113,11 +119,37 @@ namespace ps
             return m;
         }
 
-        double bandMagnitude (double f, double sr) const { return band[0].magnitude (f, sr) * band[1].magnitude (f, sr); }
+        // The two cuts alone: where processing applies when Focus also limits processing
+        double bandMagnitude (double f, double sr) const
+        {
+            double m = 1.0;
+            for (int i = 0; i < cutStages; ++i)
+            {
+                if (active[(size_t) (loStage + i)]) m *= c[(size_t) (loStage + i)].magnitude (f, sr);
+                if (active[(size_t) (hiStage + i)]) m *= c[(size_t) (hiStage + i)].magnitude (f, sr);
+            }
+            return m;
+        }
         bool bandActive() const { return loActive || hiActive; }
 
     private:
         void set (int i, bool on, const BiquadCoeffs& k) { active[(size_t) i] = on; c[(size_t) i] = on ? k : BiquadCoeffs(); }
+
+        // Stages i..i+3: Butterworth sections for the slope; Q (0.71 = flat) scales the most resonant section
+        void designCut (int i, bool on, bool highPass, int slope, double f, double q, double sr)
+        {
+            static constexpr double qs[4][4] { { 0, 0, 0, 0 }, { 0.7071, 0, 0, 0 }, { 0.5412, 1.3066, 0, 0 }, { 0.5098, 0.6013, 0.9000, 2.5629 } };
+            static constexpr int sections[4] { 1, 1, 2, 4 };
+            slope = juce::jlimit (0, 3, slope);
+            for (int k = 0; k < cutStages; ++k)
+            {
+                if (! on || k >= sections[slope]) { set (i + k, false, {}); continue; }
+                if (slope == slope6) { set (i + k, true, BiquadCoeffs::make (highPass ? 5 : 6, sr, f, 0.7071, 0)); continue; }
+                double sq = qs[slope][k];
+                if (k == sections[slope] - 1) sq = juce::jmin (12.0, sq * q / 0.7071);
+                set (i + k, true, BiquadCoeffs::make (highPass ? 0 : 1, sr, f, sq, 0));
+            }
+        }
 
         // Stages i and i+1. A band with no gain, or above the usable range, is left out. Tilt = low shelf cut + high shelf boost
         // (each half the gain) around the same frequency, so the curve crosses 0 dB there.

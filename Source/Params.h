@@ -13,6 +13,10 @@ namespace ps
         inline constexpr const char* warmth    = "warmth";
         inline constexpr const char* loCut     = "locut";
         inline constexpr const char* hiCut     = "hicut";
+        inline constexpr const char* loQ       = "loq";
+        inline constexpr const char* hiQ       = "hiq";
+        inline constexpr const char* loSlope   = "loslope";
+        inline constexpr const char* hiSlope   = "hislope";
         inline constexpr const char* lowF      = "lowf";
         inline constexpr const char* lowG      = "lowg";
         inline constexpr const char* lowQ      = "lowq";
@@ -43,6 +47,8 @@ namespace ps
 
     inline const juce::StringArray listenNames { "OUT", "TRANSIENT", "SUSTAIN", "DELTA", "SIDECHAIN" };
     inline const juce::StringArray bandTypeNames { "LO SHELF", "PEAK", "HI SHELF", "TILT" };
+    inline const juce::StringArray hpNames     { "HP 6", "HP 12", "HP 24", "HP 48" };
+    inline const juce::StringArray lpNames     { "LP 6", "LP 12", "LP 24", "LP 48" };
     inline const juce::StringArray modeNames   { "CLEAN", "SPECTRAL" };
     inline const juce::StringArray osNames     { "OFF", "2X", "4X" };
     inline const juce::StringArray windowNames { "SHORT", "MEDIUM", "LONG" };
@@ -114,6 +120,10 @@ namespace ps
         fl (id::highF, "High Freq", logRange (1500.0f, 18000.0f), 6000.0f, "Hz");
         fl (id::highG, "High Gain", { -18.0f, 18.0f, 0.01f }, 0.0f, "dB");
         l.add (std::make_unique<AudioParameterFloat> (ParameterID { id::highQ, 1 }, "High Width", qRange(), 0.71f));
+        l.add (std::make_unique<AudioParameterFloat> (ParameterID { id::loQ, 1 }, "Lo Cut Q", qRange(), 0.71f));
+        l.add (std::make_unique<AudioParameterFloat> (ParameterID { id::hiQ, 1 }, "Hi Cut Q", qRange(), 0.71f));
+        choice (id::loSlope,  "Lo Cut Slope", StringArray { "6 dB/oct", "12 dB/oct", "24 dB/oct", "48 dB/oct" }, slope24);
+        choice (id::hiSlope,  "Hi Cut Slope", StringArray { "6 dB/oct", "12 dB/oct", "24 dB/oct", "48 dB/oct" }, slope24);
         choice (id::lowType,  "Low Type",  bandTypeNames, bandLoShelf);
         choice (id::midType,  "Mid Type",  bandTypeNames, bandPeak);
         choice (id::highType, "High Type", bandTypeNames, bandHiShelf);
