@@ -133,6 +133,11 @@ void PotatoShaperProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch) buffer.clear (ch, 0, numSamples);
     if (numCh == 0 || numSamples == 0) return;
 
+    if (auto* head = getPlayHead())
+        if (const auto pos = head->getPosition())
+            if (const auto bpm = pos->getBpm())
+                if (*bpm > 20.0 && *bpm < 400.0) hostBpm.store (*bpm, std::memory_order_relaxed);
+
     const bool extSc = raw.extSc->load() > 0.5f;
     juce::AudioBuffer<float> sc;
     if (extSc && getBusCount (true) > 1 && getBus (true, 1)->isEnabled())

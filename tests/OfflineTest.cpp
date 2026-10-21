@@ -121,8 +121,8 @@ namespace
 }
 
 // Renders the editor with live audio running into a PNG (used for GUI previews):
-// PotatoShaperTests --snapshot file.png [spectral] [side] [band=0..4] [type=0..3]   (band 0 / 4 = lo / hi cut, type = slope)
-int snapshot (const juce::File& file, bool spectral, int band, int bandType, bool sideTab)
+// PotatoShaperTests --snapshot file.png [spectral] [side] [bpm=N] [band=0..4] [type=0..3]   (band 0 / 4 = lo / hi cut, type = slope)
+int snapshot (const juce::File& file, bool spectral, int band, int bandType, bool sideTab, double bpm)
 {
     PotatoShaperProcessor p;
     p.setPlayConfigDetails (2, 2, sr, block);
@@ -134,6 +134,7 @@ int snapshot (const juce::File& file, bool spectral, int band, int bandType, boo
     const char* typeIds[5] { ps::id::loSlope, ps::id::lowType, ps::id::midType, ps::id::highType, ps::id::hiSlope };
     if (band >= 0 && band <= 4 && bandType >= 0) set (typeIds[band], (float) bandType);
     if (sideTab) { set (ps::id::msMode, 1.0f); set (ps::id::transSide, -3.0f); set (ps::id::susSide, 5.0f); set (ps::id::link, 0.0f); }
+    p.hostBpm = bpm;   // the logo cycles once per two beats: the snapshot runs 2.55 s, so 23.5 BPM ends on yellow and 47 BPM on orange
     p.prepareToPlay (sr, block);
 
     auto hits = makeHits (0.3f);
@@ -166,16 +167,17 @@ int main (int argc, char** argv)
     juce::ScopedJuceInitialiser_GUI init;
     if (argc >= 3 && juce::String (argv[1]) == "--snapshot")
     {
-        bool spectral = false, sideTab = false; int band = -1, type = -1;
+        bool spectral = false, sideTab = false; int band = -1, type = -1; double bpm = 120.0;
         for (int i = 3; i < argc; ++i)
         {
             const juce::String a (argv[i]);
             if (a == "spectral") spectral = true;
             else if (a == "side") sideTab = true;
+            else if (a.startsWith ("bpm=")) bpm = a.substring (4).getDoubleValue();
             else if (a.startsWith ("band=")) band = a.substring (5).getIntValue();
             else if (a.startsWith ("type=")) type = a.substring (5).getIntValue();
         }
-        return snapshot (juce::File (argv[2]), spectral, band, type, sideTab);
+        return snapshot (juce::File (argv[2]), spectral, band, type, sideTab, bpm);
     }
     for (int mode : { 0, 1 })
     {

@@ -879,6 +879,13 @@ private:
 class PotatoBadge : public Component
 {
 public:
+    // Colour cycle position in cycles (orange -> yellow -> orange per whole cycle)
+    void setCycle (float cycles)
+    {
+        const float m = 0.5f - 0.5f * std::cos (MathConstants<float>::twoPi * cycles);
+        if (std::abs (m - mix) > 0.004f) { mix = m; repaint(); }
+    }
+
     void setActivity (float a)
     {
         a = jlimit (0.0f, 1.0f, a);
@@ -891,12 +898,13 @@ public:
         const Point<float> c (b.getCentreX(), b.getCentreY());
         const float R = jmin (b.getWidth(), b.getHeight()) * 0.37f;
         const Path spud = potatoPath (c, R);
-        g.setGradientFill (ColourGradient (col::amber.withAlpha (0.16f + 0.14f * act), c.x, c.y, col::amber.withAlpha (0.0f), c.x + R * 1.7f, c.y, true));
+        const Colour now = col::orange.interpolatedWith (col::yellow, mix), ahead = col::orange.interpolatedWith (col::yellow, jmin (1.0f, mix + 0.3f));
+        g.setGradientFill (ColourGradient (now.withAlpha (0.16f + 0.14f * act), c.x, c.y, now.withAlpha (0.0f), c.x + R * 1.7f, c.y, true));
         g.fillEllipse (Rectangle<float> (R * 3.4f, R * 2.7f).withCentre (c));
         g.setGradientFill (ColourGradient (Colour (0xff3a200c), c.x - R * 0.35f, c.y - R * 0.45f, Colour (0xff0d0704), c.x + R * 0.95f, c.y + R * 0.8f, true));
         g.fillPath (spud);
         const auto sb = spud.getBounds();
-        auto rampFill = [&] (float a) { return ColourGradient (col::orange.withAlpha (a), sb.getX(), sb.getBottom(), col::yellow.withAlpha (a), sb.getRight(), sb.getY(), false); };
+        auto rampFill = [&] (float a) { return ColourGradient (now.withAlpha (a), sb.getX(), sb.getBottom(), ahead.withAlpha (a), sb.getRight(), sb.getY(), false); };
         g.setGradientFill (rampFill (0.16f)); g.strokePath (spud, PathStrokeType (7.0f, PathStrokeType::curved, PathStrokeType::rounded));
         g.setGradientFill (rampFill (1.0f));  g.strokePath (spud, PathStrokeType (1.5f, PathStrokeType::curved, PathStrokeType::rounded));
         for (int i = 0; i < 2; ++i)
@@ -904,15 +912,17 @@ public:
             const Point<float> e = c + Point<float> (i == 0 ? -0.34f : 0.30f, i == 0 ? -0.16f : -0.19f) * R;
             g.setColour (Colour (0xff080402)); g.fillEllipse (Rectangle<float> (R * 0.30f, R * 0.36f).withCentre (e));
             const float pr = R * (0.075f + 0.03f * act);
-            g.setColour (col::yellow); g.fillEllipse (Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (e));
+            g.setColour (now); g.fillEllipse (Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (e));
         }
         Path mouth;
         mouth.startNewSubPath (c.x - R * 0.22f, c.y + R * 0.30f);
         mouth.quadraticTo (c.x - R * 0.02f, c.y + R * 0.46f, c.x + R * 0.22f, c.y + R * 0.27f);
-        g.setColour (col::yellow); g.strokePath (mouth, PathStrokeType (1.6f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (now); g.strokePath (mouth, PathStrokeType (1.6f, PathStrokeType::curved, PathStrokeType::rounded));
     }
 
 private:
+    float mix = 0.0f;
+
     static Path potatoPath (Point<float> c, float R)
     {
         const float radii[16] { 1.02f, 0.97f, 0.90f, 0.93f, 0.99f, 0.95f, 0.91f, 0.98f, 1.06f, 1.03f, 0.94f, 0.90f, 0.96f, 1.04f, 1.00f, 1.05f };
@@ -1258,6 +1268,12 @@ public:
         vu.setLevel (proc.outRms.load());
         badge.setActivity (jmax (outPk[0], outPk[1]));
 
+        // Logo colour cycle: one orange-yellow-orange cycle every two beats of the host tempo (half the BPM)
+        const double nowMs = Time::getMillisecondCounterHiRes();
+        if (lastCycleMs > 0.0) logoCycles += (nowMs - lastCycleMs) * 0.001 * proc.hostBpm.load (std::memory_order_relaxed) / 120.0;
+        lastCycleMs = nowMs;
+        badge.setCycle ((float) (logoCycles - std::floor (logoCycles)));
+
         const bool ms = proc.apvts.getRawParameterValue (ps::id::msMode)->load() > 0.5f;
         if (ms != tabsShown) { tabsShown = ms; setMsTab (ms ? msTab : 0); }
         const bool spec = proc.apvts.getRawParameterValue (ps::id::mode)->load() > 0.5f;
@@ -1312,6 +1328,7 @@ private:
     SquareButton abA { "A" }, abB { "B" }, abCopy { "COPY" }, tabMid { "MID" }, tabSide { "SIDE" };
     Knob *transKnob = nullptr, *susKnob = nullptr;
     int msTab = 0;
+    double logoCycles = 0.0, lastCycleMs = 0.0;
     bool tabsShown = false;
     PresetArrow presetPrev { true, "Previous preset" }, presetNext { false, "Next preset" };
     LedWindow presetWin;
