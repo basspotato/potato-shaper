@@ -875,47 +875,66 @@ private:
 };
 
 //==============================================================================
-// Tesseract emblem: a cube inside a cube, joined at the corners (the classic hypercube projection), drawn as
-// orange -> yellow glowing line art to match the potato
+// Tesseract emblem: a hypercube drawn as orange -> yellow glowing line art. It is turned through the fourth
+// dimension (the outer cube folds in while the inner one grows out and takes its place, which looks identical to
+// the start after half a turn) and spins slowly in 3D. One fold per cycle, in step with the potato's colour cycle.
 class TesseractBadge : public Component
 {
 public:
+    // cycles: position in the shared logo cycle (one orange-yellow-orange cycle = one fold)
+    void setCycle (float cycles)
+    {
+        if (std::abs (cycles - phase) < 0.002f) return;
+        phase = cycles;
+        repaint();
+    }
+
     void paint (Graphics& g) override
     {
         const auto c = getLocalBounds().toFloat().getCentre();
-        // each cube: front square and back square, shifted diagonally, plus the four joining edges
-        auto cube = [] (Point<float> ctr, float half, Point<float> d, Point<float> v[8])
+        const float mix = 0.5f - 0.5f * std::cos (MathConstants<float>::twoPi * phase);   // same as the potato's colour
+        const Colour now = col::orange.interpolatedWith (col::yellow, mix), ahead = col::orange.interpolatedWith (col::yellow, jmin (1.0f, mix + 0.35f));
+
+        const float fold = MathConstants<float>::pi * phase, spin = MathConstants<float>::twoPi * phase, tilt = 0.5f;
+        const float cf = std::cos (fold), sf = std::sin (fold), cs = std::cos (spin), ss = std::sin (spin), ct = std::cos (tilt), st = std::sin (tilt);
+        Point<float> p[16];
+        float depth[16];
+        for (int i = 0; i < 16; ++i)
         {
-            for (int i = 0; i < 4; ++i)
-            {
-                const Point<float> corner ((i & 1) ? half : -half, (i & 2) ? half : -half);
-                v[i]     = ctr + corner - d * 0.5f;
-                v[i + 4] = ctr + corner + d * 0.5f;
-            }
-        };
-        Point<float> outer[8], inner[8];
-        cube (c, 14.0f, { 10.0f, -10.0f }, outer);
-        cube (c, 7.0f, { 5.0f, -5.0f }, inner);
+            float x = (i & 1) ? 1.0f : -1.0f, y = (i & 2) ? 1.0f : -1.0f, z = (i & 4) ? 1.0f : -1.0f, w = (i & 8) ? 1.0f : -1.0f;
+            const float xr = x * cf - w * sf, wr = x * sf + w * cf;        // turn in the x-w plane
+            const float k4 = 2.6f / (2.6f - wr);                            // 4D -> 3D perspective
+            x = xr * k4; y *= k4; z *= k4;
+            const float x2 = x * cs + z * ss, z2 = -x * ss + z * cs;       // spin about the vertical axis
+            const float y3 = y * ct - z2 * st, z3 = y * st + z2 * ct;      // fixed tilt
+            const float k3 = 4.5f / (4.5f - z3);                            // 3D -> 2D perspective
+            p[i] = c + Point<float> (x2, -y3) * (7.6f * k3);
+            depth[i] = 0.5f + 0.5f * jlimit (-1.0f, 1.0f, z3 / 2.0f);
+        }
 
-        static constexpr int cubeEdges[12][2] { { 0, 1 }, { 1, 3 }, { 3, 2 }, { 2, 0 }, { 4, 5 }, { 5, 7 }, { 7, 6 }, { 6, 4 },
-                                                { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } };
         Path edges;
-        for (auto* cubeVerts : { outer, inner })
-            for (auto& e : cubeEdges) { edges.startNewSubPath (cubeVerts[e[0]]); edges.lineTo (cubeVerts[e[1]]); }
-        for (int i = 0; i < 8; ++i) { edges.startNewSubPath (outer[i]); edges.lineTo (inner[i]); }   // 4D links
-
-        const auto b = edges.getBounds();
-        auto ramp = [&] (float a) { return ColourGradient (col::orange.withAlpha (a), b.getX(), b.getBottom(), col::yellow.withAlpha (a), b.getRight(), b.getY(), false); };
-        g.setGradientFill (ramp (0.10f)); g.strokePath (edges, PathStrokeType (7.0f, PathStrokeType::mitered, PathStrokeType::rounded));
-        g.setGradientFill (ramp (0.22f)); g.strokePath (edges, PathStrokeType (3.5f, PathStrokeType::mitered, PathStrokeType::rounded));
-        g.setGradientFill (ramp (1.0f));  g.strokePath (edges, PathStrokeType (1.3f, PathStrokeType::mitered, PathStrokeType::rounded));
-        for (auto* cubeVerts : { outer, inner })   // bright vertex dots
-            for (int i = 0; i < 8; ++i)
+        for (int i = 0; i < 16; ++i)
+            for (int bit = 0; bit < 4; ++bit)
             {
-                g.setColour (col::yellow.brighter (0.4f).withAlpha (0.9f));
-                g.fillEllipse (Rectangle<float> (2.4f, 2.4f).withCentre (cubeVerts[i]));
+                const int j = i ^ (1 << bit);
+                if (j > i) { edges.startNewSubPath (p[i]); edges.lineTo (p[j]); }
             }
+
+        const auto bnd = edges.getBounds();
+        auto ramp = [&] (float a) { return ColourGradient (now.withAlpha (a), bnd.getX(), bnd.getBottom(), ahead.withAlpha (a), bnd.getRight(), bnd.getY(), false); };
+        const float glow = 0.6f + 0.8f * mix;   // the glow swells as the colour reaches yellow
+        g.setGradientFill (ramp (0.10f * glow)); g.strokePath (edges, PathStrokeType (7.5f, PathStrokeType::mitered, PathStrokeType::rounded));
+        g.setGradientFill (ramp (0.22f * glow)); g.strokePath (edges, PathStrokeType (3.6f, PathStrokeType::mitered, PathStrokeType::rounded));
+        g.setGradientFill (ramp (1.0f));         g.strokePath (edges, PathStrokeType (1.3f, PathStrokeType::mitered, PathStrokeType::rounded));
+        for (int i = 0; i < 16; ++i)
+        {
+            g.setColour (ahead.brighter (0.4f).withAlpha (0.55f + 0.4f * depth[i]));
+            g.fillEllipse (Rectangle<float> (2.2f + 0.8f * depth[i], 2.2f + 0.8f * depth[i]).withCentre (p[i]));
+        }
     }
+
+private:
+    float phase = 0.0f;
 };
 
 //==============================================================================
@@ -1189,7 +1208,7 @@ public:
         // Header: tesseract, title, then the potato centred in the gap before the Engine group (as in Potato-Magic)
         tesseract.setBounds (12, 6, 46, 46);
         const float titleEnd = 64.0f + GlyphArrangement::getStringWidth (label (27.0f, 0.12f, true), "POTATO-SHAPER");
-        badge.setBounds (Rectangle<int> (90, 60).withCentre ({ roundToInt ((titleEnd + 389.0f) * 0.5f), 25 }));   // 50% bigger than the first size; fills the header height
+        badge.setBounds (Rectangle<int> (110, 78).withCentre ({ roundToInt ((titleEnd + 389.0f) * 0.5f) + 13, 32 }));   // 30% bigger again, nudged down and right
         tesseract.setInterceptsMouseClicks (false, false);
         badge.setInterceptsMouseClicks (false, false);
         // Engine + A/B group (422 wide) centred on the display window below (x 300 to 900)
@@ -1321,7 +1340,9 @@ public:
         const double nowMs = Time::getMillisecondCounterHiRes();
         if (lastCycleMs > 0.0) logoCycles += (nowMs - lastCycleMs) * 0.001 * proc.hostBpm.load (std::memory_order_relaxed) / 240.0;
         lastCycleMs = nowMs;
-        badge.setCycle ((float) (logoCycles - std::floor (logoCycles)));
+        const float cyclePos = (float) (logoCycles - std::floor (logoCycles));
+        badge.setCycle (cyclePos);
+        tesseract.setCycle (cyclePos);
 
         const bool ms = proc.apvts.getRawParameterValue (ps::id::msMode)->load() > 0.5f;
         if (ms != tabsShown) { tabsShown = ms; setMsTab (ms ? msTab : 0); }
