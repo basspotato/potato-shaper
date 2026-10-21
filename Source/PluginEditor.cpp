@@ -1206,9 +1206,8 @@ public:
             addAndMakeVisible (c);
 
         // Header: tesseract, title, then the potato centred in the gap before the Engine group (as in Potato-Magic)
-        tesseract.setBounds (8, 2, 56, 56);
-        const float titleEnd = 68.0f + GlyphArrangement::getStringWidth (label (32.0f, 0.12f, true), "POTATO-SHAPER");
-        badge.setBounds (Rectangle<int> (110, 78).withCentre ({ roundToInt ((titleEnd + 389.0f) * 0.5f) - 12, 39 }));   // 30% bigger again, nudged down and right
+        tesseract.setBounds (8, -5, 56, 56);
+        badge.setBounds (Rectangle<int> (110, 78).withCentre ({ 335, 39 }));   // 30% bigger again, nudged down and right
         tesseract.setInterceptsMouseClicks (false, false);
         badge.setInterceptsMouseClicks (false, false);
         // Engine + A/B group (422 wide) centred on the display window below (x 300 to 900)
@@ -1287,8 +1286,8 @@ public:
         drawTile (g, { 300, 470, 600, 186 });    // transient / sustain / time / warmth
         drawTile (g, { 926, 470, 250, 186 });    // makeup / mix
         drawTile (g, { 12, 668, 1176, 84 });     // listen / preset / clip / bypass
-        g.setFont (label (32.0f, 0.12f, true));
-        glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (68, 9, 260, 40), Justification::left, 0.3f);
+        g.setFont (label (41.6f, 0.03f, true));
+        glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (68, 4, 340, 50), Justification::left, 0.3f);
         g.setFont (label (13.0f, 0.2f)); g.setColour (col::inkDim);
         g.drawText ("ENGINE", Rectangle<float> (389, 0, 220, 14), Justification::centred, false);
         g.drawText ("A / B", Rectangle<float> (649, 0, 162, 14), Justification::left, false);
