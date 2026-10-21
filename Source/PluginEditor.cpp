@@ -875,6 +875,50 @@ private:
 };
 
 //==============================================================================
+// Tesseract emblem: a cube inside a cube, joined at the corners (the classic hypercube projection), drawn as
+// orange -> yellow glowing line art to match the potato
+class TesseractBadge : public Component
+{
+public:
+    void paint (Graphics& g) override
+    {
+        const auto c = getLocalBounds().toFloat().getCentre();
+        // each cube: front square and back square, shifted diagonally, plus the four joining edges
+        auto cube = [] (Point<float> ctr, float half, Point<float> d, Point<float> v[8])
+        {
+            for (int i = 0; i < 4; ++i)
+            {
+                const Point<float> corner ((i & 1) ? half : -half, (i & 2) ? half : -half);
+                v[i]     = ctr + corner - d * 0.5f;
+                v[i + 4] = ctr + corner + d * 0.5f;
+            }
+        };
+        Point<float> outer[8], inner[8];
+        cube (c, 14.0f, { 10.0f, -10.0f }, outer);
+        cube (c, 7.0f, { 5.0f, -5.0f }, inner);
+
+        static constexpr int cubeEdges[12][2] { { 0, 1 }, { 1, 3 }, { 3, 2 }, { 2, 0 }, { 4, 5 }, { 5, 7 }, { 7, 6 }, { 6, 4 },
+                                                { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 } };
+        Path edges;
+        for (auto* cubeVerts : { outer, inner })
+            for (auto& e : cubeEdges) { edges.startNewSubPath (cubeVerts[e[0]]); edges.lineTo (cubeVerts[e[1]]); }
+        for (int i = 0; i < 8; ++i) { edges.startNewSubPath (outer[i]); edges.lineTo (inner[i]); }   // 4D links
+
+        const auto b = edges.getBounds();
+        auto ramp = [&] (float a) { return ColourGradient (col::orange.withAlpha (a), b.getX(), b.getBottom(), col::yellow.withAlpha (a), b.getRight(), b.getY(), false); };
+        g.setGradientFill (ramp (0.10f)); g.strokePath (edges, PathStrokeType (7.0f, PathStrokeType::mitered, PathStrokeType::rounded));
+        g.setGradientFill (ramp (0.22f)); g.strokePath (edges, PathStrokeType (3.5f, PathStrokeType::mitered, PathStrokeType::rounded));
+        g.setGradientFill (ramp (1.0f));  g.strokePath (edges, PathStrokeType (1.3f, PathStrokeType::mitered, PathStrokeType::rounded));
+        for (auto* cubeVerts : { outer, inner })   // bright vertex dots
+            for (int i = 0; i < 8; ++i)
+            {
+                g.setColour (col::yellow.brighter (0.4f).withAlpha (0.9f));
+                g.fillEllipse (Rectangle<float> (2.4f, 2.4f).withCentre (cubeVerts[i]));
+            }
+    }
+};
+
+//==============================================================================
 // Potato mascot badge (Potato-Kicker)
 class PotatoBadge : public Component
 {
@@ -1136,13 +1180,18 @@ public:
 
         for (Component* c : { (Component*) &display, (Component*) &mode, (Component*) &osRow, (Component*) &msRow, (Component*) &scRow,
                               (Component*) &winRow, (Component*) &listen, (Component*) &clipBtn, (Component*) &bypassBtn,
-                              (Component*) &focusSw, (Component*) &vu, (Component*) &meters, (Component*) &badge,
+                              (Component*) &focusSw, (Component*) &vu, (Component*) &meters, (Component*) &badge, (Component*) &tesseract,
                               (Component*) &abA, (Component*) &abB, (Component*) &abCopy,
                               (Component*) &presetPrev, (Component*) &presetWin, (Component*) &presetNext,
                               (Component*) &tabMid, (Component*) &tabSide })
             addAndMakeVisible (c);
 
-        badge.setBounds (14, 4, 56, 50);
+        // Header: tesseract, title, then the potato centred in the gap before the Engine group (as in Potato-Magic)
+        tesseract.setBounds (12, 6, 46, 46);
+        const float titleEnd = 64.0f + GlyphArrangement::getStringWidth (label (27.0f, 0.12f, true), "POTATO-SHAPER");
+        badge.setBounds (Rectangle<int> (60, 40).withCentre ({ roundToInt ((titleEnd + 389.0f) * 0.5f), 28 }));
+        tesseract.setInterceptsMouseClicks (false, false);
+        badge.setInterceptsMouseClicks (false, false);
         // Engine + A/B group (422 wide) centred on the display window below (x 300 to 900)
         mode.setBounds (389, 16, 220, 30);
         abA.setBounds (649, 16, 40, 30); abB.setBounds (695, 16, 40, 30); abCopy.setBounds (741, 16, 70, 30);
@@ -1220,7 +1269,7 @@ public:
         drawTile (g, { 926, 470, 250, 186 });    // makeup / mix
         drawTile (g, { 12, 668, 1176, 84 });     // listen / preset / clip / bypass
         g.setFont (label (27.0f, 0.12f, true));
-        glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (76, 12, 240, 32), Justification::left, 0.3f);
+        glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (64, 12, 240, 32), Justification::left, 0.3f);
         g.setFont (label (13.0f, 0.2f)); g.setColour (col::inkDim);
         g.drawText ("ENGINE", Rectangle<float> (389, 0, 220, 14), Justification::left, false);
         g.drawText ("A / B", Rectangle<float> (649, 0, 162, 14), Justification::left, false);
@@ -1325,6 +1374,7 @@ private:
     VuMeter vu;
     LedMeters meters;
     PotatoBadge badge;
+    TesseractBadge tesseract;
     SquareButton abA { "A" }, abB { "B" }, abCopy { "COPY" }, tabMid { "MID" }, tabSide { "SIDE" };
     Knob *transKnob = nullptr, *susKnob = nullptr;
     int msTab = 0;
