@@ -54,7 +54,7 @@ public:
     std::atomic<float> inPeak[2] {}, outPeak[2] {}, outRms { 0.0f };
     std::atomic<float> transDb { 0.0f }, susDb { 0.0f };
     std::atomic<bool>  clipped { false };
-    std::atomic<double> hostBpm { 120.0 };   // the host tempo when it reports one (drives the logo's colour cycle)
+    std::atomic<double> hostBpm { 60.0 };   // the host tempo when it reports one (drives the logo's colour cycle)
 
     static constexpr int scopeSize = 1 << 14;
     int getScopeWritePos() const noexcept { return scopePos.load (std::memory_order_acquire); }

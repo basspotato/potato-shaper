@@ -1268,9 +1268,9 @@ public:
         vu.setLevel (proc.outRms.load());
         badge.setActivity (jmax (outPk[0], outPk[1]));
 
-        // Logo colour cycle: one orange-yellow-orange cycle every two beats of the host tempo (half the BPM)
+        // Logo colour cycle: one orange-yellow-orange cycle every four beats (one bar) of the host tempo; 60 BPM when the host gives none
         const double nowMs = Time::getMillisecondCounterHiRes();
-        if (lastCycleMs > 0.0) logoCycles += (nowMs - lastCycleMs) * 0.001 * proc.hostBpm.load (std::memory_order_relaxed) / 120.0;
+        if (lastCycleMs > 0.0) logoCycles += (nowMs - lastCycleMs) * 0.001 * proc.hostBpm.load (std::memory_order_relaxed) / 240.0;
         lastCycleMs = nowMs;
         badge.setCycle ((float) (logoCycles - std::floor (logoCycles)));
 
