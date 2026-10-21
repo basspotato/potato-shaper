@@ -36,6 +36,13 @@ namespace col
     };
     inline const Typefaces& tf() { static Typefaces t; return t; }
 
+    // Black pebbled-vinyl case texture (sampled from a Roland RE-201 case), tiled behind the panel
+    inline const Image& caseTexture()
+    {
+        static const Image img = ImageFileFormat::loadFrom (BinaryData::case_texture_png, BinaryData::case_texture_pngSize);
+        return img;
+    }
+
     inline Font label (float h, float kern = 0.0f, bool bold = false)
     {
         return Font (FontOptions (bold ? tf().bold : tf().semi).withHeight (h).withKerningFactor (kern));
@@ -178,7 +185,7 @@ namespace col
         for (int j = 0; numbered && j <= 10; ++j)
         {
             const bool on = isOn (j / 10.0f);
-            g.setColour (on ? ramp (j / 10.0f).brighter (0.55f) : Colour (0xff8f8174));
+            g.setColour (on ? ramp (j / 10.0f).brighter (0.55f) : Colour (0xffcbbdab));
             g.drawText (String (j), Rectangle<float> (14.0f, 11.0f).withCentre (polar (c, rn, -135.0f + j * 27.0f)), Justification::centred, false);
         }
 
@@ -202,10 +209,23 @@ namespace col
         // skirt, glossy body, shine
         g.setGradientFill (ColourGradient (Colour (0xff3a3632), c.x, c.y - rB - 3, Colours::black, c.x, c.y + rB + 3, false));
         g.fillEllipse (box (rB + 1.6f));
+        // knurled edge (RE-201 style): fine radial grooves around the skirt
+        const int knurls = size < 70.0f ? 36 : 54;
+        for (int i = 0; i < knurls; ++i)
+        {
+            const float a = 360.0f * (float) i / (float) knurls;
+            const auto k1 = polar (c, rB - 1.2f, a), k2 = polar (c, rB + 1.6f, a);
+            g.setColour (Colour (0xffa59d94).withAlpha (0.42f)); g.drawLine (k1.x, k1.y, k2.x, k2.y, 0.9f);
+        }
         ColourGradient body (Colour (0xff4e4a46), c.x - rB * 0.2f, c.y - rB * 0.4f, Colour (0xff020202), c.x - rB * 0.2f + rB * 1.56f, c.y - rB * 0.4f, true);
         body.addColour (0.32, Colour (0xff1d1b1a));
         g.setGradientFill (body); g.fillEllipse (box (rB - 1.0f));
         g.setColour (Colours::black); g.drawEllipse (box (rB - 1.0f), 0.8f);
+        // concentric brushed rings on the cap
+        for (float rr : { 0.78f, 0.56f })
+        {
+            g.setColour (Colours::white.withAlpha (0.07f)); g.drawEllipse (box ((rB - 1.0f) * rr), 0.8f);
+        }
         const Point<float> sc (c.x - rB * 0.22f, c.y - rB * 0.4f);
         g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.24f), sc.x, sc.y, Colours::white.withAlpha (0.0f), sc.x + rB * 0.55f, sc.y, true));
         g.fillEllipse (Rectangle<float> (rB * 1.1f, rB * 0.6f).withCentre (sc));

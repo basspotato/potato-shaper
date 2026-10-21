@@ -53,11 +53,11 @@ public:
         if (dimmed) g.beginTransparencyLayer (0.3f);
         const float w = (float) getWidth(), n = param != nullptr ? param->getValue() : 0.5f;
         g.setFont (label (size < 70.0f ? 14.5f : 16.0f, 0.1f));
-        glowText (g, name, Rectangle<float> (0, 0, w, 17), Justification::centred, col::ink, 0.22f);
+        glowText (g, name, Rectangle<float> (0, 0, w, 17), Justification::centred, Colour (0xfff3e8d8), 0.22f);
         std::unique_ptr<RampScope> scope;
         if (lit) scope = std::make_unique<RampScope> (accent, accentPeak);
         drawLitKnob (g, { w * 0.5f, 18.0f + size * 0.5f }, size, n, size >= 84.0f, true, origin);
-        g.setColour (dragging ? ramp (n).brighter (0.4f) : Colour (0xffb98c62));
+        g.setColour (dragging ? ramp (n).brighter (0.4f) : Colour (0xffe9d9c3));
         g.setFont (mono (12.5f));
         g.drawText (param != nullptr ? ps::formatValue (param->getParameterID(), value()) : String ("--"),
                     Rectangle<float> (0, 18.0f + size, w, 15), Justification::centred, false);
@@ -127,8 +127,9 @@ private:
 class ToggleSwitch : public Component
 {
 public:
-    ToggleSwitch (RangedAudioParameter& p, String title, String onText, String offText)
-        : name (std::move (title)), onT (std::move (onText)), offT (std::move (offText)),
+    // onRight: the lever and the "on" label sit on the right (so a L/R | M/S switch reads left to right)
+    ToggleSwitch (RangedAudioParameter& p, String title, String onText, String offText, bool onRight = false)
+        : name (std::move (title)), onT (std::move (onText)), offT (std::move (offText)), flip (onRight),
           attach (p, [this] (float v) { on = v > 0.5f; repaint(); }, nullptr)
     {
         attach.sendInitialUpdate();
@@ -144,14 +145,14 @@ public:
         drawLed (g, Rectangle<float> (11, 11).withCentre ({ cx, 7.5f }), on);
         const Point<float> c (cx, 38.0f);
         g.setColour (col::inkDim); g.setFont (label (13.0f, 0.08f));
-        g.drawText (onT,  Rectangle<float> (0, c.y - 7, 30, 14), Justification::centredRight, false);
-        g.drawText (offT, Rectangle<float> (70, c.y - 7, 30, 14), Justification::centredLeft, false);
+        g.drawText (flip ? offT : onT, Rectangle<float> (0, c.y - 7, 30, 14), Justification::centredRight, false);
+        g.drawText (flip ? onT : offT, Rectangle<float> (70, c.y - 7, 30, 14), Justification::centredLeft, false);
         g.setColour (Colour (0xff0b0908)); g.fillEllipse (Rectangle<float> (30, 30).withCentre (c));
         g.setColour (col::line.withAlpha (0.35f)); g.drawEllipse (Rectangle<float> (30, 30).withCentre (c), 1.0f);
         g.setGradientFill (ColourGradient (Colour (0xff5d544c), c.x - 12, c.y - 12, Colour (0xff17130f), c.x + 12, c.y + 12, false));
         g.fillEllipse (Rectangle<float> (24, 24).withCentre (c));
         g.setColour (Colour (0xff2a2a2d)); g.fillEllipse (Rectangle<float> (12, 12).withCentre (c));
-        const auto tip = polar (c, 15.0f, on ? -32.0f : 32.0f);
+        const auto tip = polar (c, 15.0f, (on != flip) ? -32.0f : 32.0f);
         g.setColour (Colour (0xffcfc6bd)); g.drawLine (c.x, c.y, tip.x, tip.y, 5.0f);
         g.setColour (on ? col::amberHi : Colour (0xffe2dad2)); g.fillEllipse (Rectangle<float> (7.2f, 7.2f).withCentre (tip));
         g.setFont (label (15.0f, 0.12f));
@@ -162,6 +163,7 @@ public:
 
 private:
     String name, onT, offT;
+    bool flip = false;
     ParameterAttachment attach;
     bool on = false;
 };
@@ -1106,12 +1108,12 @@ public:
         : proc (p), display (p),
           mode   (*p.apvts.getParameter (ps::id::mode), ps::modeNames, "Engine"),
           osRow  (*p.apvts.getParameter (ps::id::os), ps::osNames, "Oversampling"),
-          msRow  (*p.apvts.getParameter (ps::id::msMode), StringArray { "L / R", "M / S" }, "Stereo mode"),
-          scRow  (*p.apvts.getParameter (ps::id::extSc), StringArray { "INTERNAL", "EXTERNAL" }, "Side-chain source"),
           winRow (*p.apvts.getParameter (ps::id::window), ps::windowNames, "Spectral window"),
           listen (*p.apvts.getParameter (ps::id::listen), ps::listenNames, "Listen"),
           clipBtn (*p.apvts.getParameter (ps::id::clip), "SAFETY CLIP"),
           bypassBtn (*p.apvts.getParameter (ps::id::bypass), "BYPASS"),
+          msSw   (*p.apvts.getParameter (ps::id::msMode), "MODE", "M/S", "L/R", true),
+          scSw   (*p.apvts.getParameter (ps::id::extSc), "SOURCE", "EXT", "INT", true),
           focusSw (*p.apvts.getParameter (ps::id::focusProc), "FOCUS", "PROC", "DET")
     {
         auto& s = p.apvts;
@@ -1129,12 +1131,12 @@ public:
         knob (ps::id::warmth,  "WARMTH",     92, 797, 574);
         knob (ps::id::makeup,  "MAKEUP",     88, 990, 574);
         knob (ps::id::mix,     "MIX",        88, 1110, 574);
-        knob (ps::id::link,    "LINK",       72, 85, 198);
-        knob (ps::id::balance, "BALANCE",    72, 215, 198, true);
-        knob (ps::id::scGain,  "SC GAIN",    72, 85, 414, true);
-        knob (ps::id::sharp,   "SHARPNESS",  64, 150, 606);
+        knob (ps::id::link,    "LINK",       64, 150, 170);
+        knob (ps::id::balance, "BALANCE",    64, 236, 170, true);
+        knob (ps::id::scGain,  "SC GAIN",    64, 150, 368, true);
+        knob (ps::id::sharp,   "SHARPNESS",  64, 150, 582);
 
-        for (Component* c : { (Component*) &display, (Component*) &mode, (Component*) &osRow, (Component*) &msRow, (Component*) &scRow,
+        for (Component* c : { (Component*) &display, (Component*) &mode, (Component*) &osRow, (Component*) &msSw, (Component*) &scSw,
                               (Component*) &winRow, (Component*) &listen, (Component*) &clipBtn, (Component*) &bypassBtn,
                               (Component*) &focusSw, (Component*) &vu, (Component*) &meters, (Component*) &badge,
                               (Component*) &abA, (Component*) &abB, (Component*) &abCopy,
@@ -1150,13 +1152,13 @@ public:
         display.setBounds (300, 64, 600, 380);
         vu.setBounds (926, 64, 250, 150);
         meters.setBounds (926, 226, 250, 218);
-        msRow.setBounds (24, 98, 252, 30);
-        scRow.setBounds (24, 314, 252, 30);
-        focusSw.placeAt (215, 430);
+        msSw.placeAt (56, 178);
+        scSw.placeAt (56, 376);
+        focusSw.placeAt (236, 376);
         listen.setBounds (110, 690, 520, 36);
         clipBtn.setBounds (930, 690, 130, 36);
         bypassBtn.setBounds (1072, 690, 106, 36);
-        winRow.setBounds (24, 518, 252, 30);
+        winRow.setBounds (24, 494, 252, 30);
         // M/S only: the Transient and Sustain knobs edit the Mid or the Side channel
         tabMid.setBounds (526, 476, 68, 22); tabSide.setBounds (606, 476, 68, 22);   // top of the knob box, centred under the display
         tabMid.setClickingTogglesState (false); tabSide.setClickingTogglesState (false);
@@ -1182,6 +1184,17 @@ public:
         abCopy.onClick = [this] { proc.copyABToOther(); };
         abCopy.setTitle (String ("Copy to other A/B slot"));
         syncAB();
+    }
+
+    // Solid colour plate (RE-201 style): flat colour, soft top sheen, bevelled edge and an engraved inner outline
+    static void drawPlate (Graphics& g, Rectangle<float> r, Colour c)
+    {
+        g.setColour (Colours::black.withAlpha (0.6f)); g.fillRoundedRectangle (r.translated (0, 4), 8);
+        g.setColour (c); g.fillRoundedRectangle (r, 8);
+        g.setGradientFill (ColourGradient (Colours::white.withAlpha (0.10f), 0, r.getY(), Colours::white.withAlpha (0.0f), 0, r.getY() + 60, false));
+        g.fillRoundedRectangle (r, 8);
+        g.setColour (Colours::white.withAlpha (0.22f)); g.drawRoundedRectangle (r.reduced (0.5f), 8, 1.0f);
+        g.setColour (Colours::black.withAlpha (0.35f)); g.drawRoundedRectangle (r.reduced (6.0f), 5, 1.0f);
     }
 
     // Dark HUD tile with a thin orange border and bright corner brackets (Potato-Kicker)
@@ -1212,13 +1225,17 @@ public:
 
     void paint (Graphics& g) override
     {
-        g.fillAll (col::page);
-        drawTile (g, { 12, 58, 276, 206 });      // stereo
-        drawTile (g, { 12, 276, 276, 198 });     // side-chain
-        drawTile (g, { 12, 484, 276, 176 });     // spectral
-        drawTile (g, { 300, 470, 600, 186 });    // transient / sustain / time / warmth
-        drawTile (g, { 926, 470, 250, 186 });    // makeup / mix
-        drawTile (g, { 12, 668, 1176, 84 });     // listen / preset / clip / bypass
+        g.setTiledImageFill (caseTexture(), 0, 0, 1.0f);
+        g.fillAll();
+        g.setColour (Colours::black.withAlpha (0.45f)); g.fillAll();
+        const Colour purple = Colour (0xff9b6bff).withMultipliedBrightness (0.5f), blue = Colour (0xff6aa8ff).withMultipliedBrightness (0.5f),
+                     orange = col::orange.withMultipliedBrightness (0.5f), gold = col::yellow.withMultipliedBrightness (0.5f);
+        drawPlate (g, { 12, 58, 276, 186 }, purple);     // stereo
+        drawPlate (g, { 12, 256, 276, 186 }, blue);      // side-chain
+        drawPlate (g, { 12, 454, 276, 196 }, orange);    // spectral
+        drawPlate (g, { 300, 470, 600, 186 }, gold);     // transient / sustain / time / warmth
+        drawPlate (g, { 926, 470, 250, 186 }, orange);   // makeup / mix
+        drawTile (g, { 12, 668, 1176, 84 });             // listen / preset / clip / bypass
         g.setFont (label (27.0f, 0.12f, true));
         glowTextRamp (g, "POTATO-SHAPER", Rectangle<float> (76, 12, 240, 32), Justification::left, 0.3f);
         g.setFont (label (13.0f, 0.2f)); g.setColour (col::inkDim);
@@ -1228,15 +1245,16 @@ public:
 
         auto section = [&] (const char* name, int y)
         {
-            g.setFont (label (14.0f, 0.25f)); g.setColour (col::inkDim);
+            g.setFont (label (14.0f, 0.25f)); g.setColour (Colour (0xfff3e8d8));
             g.drawText (name, Rectangle<float> (24, (float) y, 252, 18), Justification::left, false);
-            g.setColour (col::line.withAlpha (0.25f)); g.drawHorizontalLine (y + 20, 24, 276);
+            g.setColour (Colours::white.withAlpha (0.28f)); g.drawHorizontalLine (y + 20, 24, 276);
         };
         section ("STEREO", 70);
-        section ("SIDE-CHAIN", 286);
-        section (spectral ? "SPECTRAL" : "SPECTRAL  (ENGINE OFF)", 490);
+        section ("SIDE-CHAIN", 268);
+        section (spectral ? "SPECTRAL" : "SPECTRAL  (ENGINE OFF)", 466);
 
-        g.setFont (label (12.5f, 0.15f)); g.setColour (col::inkDim);
+        g.setColour (Colours::black.withAlpha (0.55f)); g.fillRoundedRectangle (Rectangle<float> (316, 47, 568, 16), 8.0f);
+        g.setFont (label (12.5f, 0.15f)); g.setColour (col::inkDim.brighter (0.3f));
         g.drawText ("FOCUS: DRAG NODES   CTRL-DRAG OR WHEEL = WIDTH   DOUBLE-CLICK = RESET", Rectangle<float> (300, 47, 600, 16), Justification::centred, false);
 
         g.setFont (label (14.0f, 0.25f)); g.setColour (col::inkDim);
@@ -1319,9 +1337,9 @@ private:
     PotatoShaperProcessor& proc;
     FocusDisplay display;
     OwnedArray<Knob> knobs;
-    ChoiceRow mode, osRow, msRow, scRow, winRow, listen;
+    ChoiceRow mode, osRow, winRow, listen;
     ParamButton clipBtn, bypassBtn;
-    ToggleSwitch focusSw;
+    ToggleSwitch msSw, scSw, focusSw;
     VuMeter vu;
     LedMeters meters;
     PotatoBadge badge;

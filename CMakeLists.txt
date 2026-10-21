@@ -51,7 +51,8 @@ juce_add_plugin(PotatoShaper
 juce_add_binary_data(PotatoShaperFonts SOURCES
     Resources/Fonts/BarlowCondensed-SemiBold.ttf
     Resources/Fonts/BarlowCondensed-Bold.ttf
-    Resources/Fonts/ShareTechMono-Regular.ttf)
+    Resources/Fonts/ShareTechMono-Regular.ttf
+    Resources/case_texture.png)
 
 target_sources(PotatoShaper PRIVATE
     Source/PluginProcessor.cpp
