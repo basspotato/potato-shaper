@@ -881,7 +881,7 @@ private:
 class TesseractBadge : public Component
 {
 public:
-    // cycles: position in the shared logo cycle (one orange-yellow-orange cycle = one fold)
+    // cycles: position in the shared logo cycle (colour and glow only; the pose is fixed)
     void setCycle (float cycles)
     {
         if (std::abs (cycles - phase) < 0.002f) return;
@@ -895,7 +895,7 @@ public:
         const float mix = 0.5f - 0.5f * std::cos (MathConstants<float>::twoPi * phase);   // same as the potato's colour
         const Colour now = col::orange.interpolatedWith (col::yellow, mix), ahead = col::orange.interpolatedWith (col::yellow, jmin (1.0f, mix + 0.35f));
 
-        const float fold = MathConstants<float>::pi * phase, spin = MathConstants<float>::twoPi * phase, tilt = 0.5f;
+        const float fold = 0.0f, spin = 0.6f, tilt = 0.35f;   // fixed diagonal pose
         const float cf = std::cos (fold), sf = std::sin (fold), cs = std::cos (spin), ss = std::sin (spin), ct = std::cos (tilt), st = std::sin (tilt);
         Point<float> p[16];
         float depth[16];
@@ -908,7 +908,7 @@ public:
             const float x2 = x * cs + z * ss, z2 = -x * ss + z * cs;       // spin about the vertical axis
             const float y3 = y * ct - z2 * st, z3 = y * st + z2 * ct;      // fixed tilt
             const float k3 = 4.5f / (4.5f - z3);                            // 3D -> 2D perspective
-            p[i] = c + Point<float> (x2, -y3) * (7.6f * k3);
+            p[i] = c + Point<float> (x2, -y3) * (6.6f * k3);
             depth[i] = 0.5f + 0.5f * jlimit (-1.0f, 1.0f, z3 / 2.0f);
         }
 
