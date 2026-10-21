@@ -53,3 +53,8 @@ tests/OfflineTest.cpp  null, attack/tail, level-independence, steady-tone distor
 - Keep CPU low. Flag anything that adds cost (per-sample transcendental math, bigger FFTs, higher repaint rates).
 - Latency must be reported correctly (`updateLatency`); dry paths are delayed to match.
 - GUI: Potato-Kicker look (black glossy knobs, orange-to-yellow light, all-caps labels, HUD tiles). Fixed 1200 x 760 panel, scaled. Build on it, don't redesign.
+
+## Notes
+
+- GUI snapshot (Linux): start `Xvfb :99 &`, then `DISPLAY=:99 PotatoShaperTests --snapshot out.png [spectral] [side] [bpm=N] [band=0..4] [type=0..3]`.
+- Known: the macOS CI job gets cancelled at about 15 min (cause undiagnosed; Windows passes).
