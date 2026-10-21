@@ -976,24 +976,38 @@ private:
 };
 
 //==============================================================================
-// Preset browser overlay: groups on the left, the group's 10 presets on the right
+// Preset browser overlay: groups on the left, the group's 10 presets on the right. The component covers the whole panel
+// so a click outside the box (or Esc, or the X) closes it; picking a preset loads it and closes it.
 class PresetBrowser : public Component
 {
 public:
+    static constexpr int boxX = 150, boxY = 190, boxW = 900, boxH = 430;
     std::function<void (int)> onPick;
+
+    PresetBrowser() { setWantsKeyboardFocus (true); }
 
     void show (int currentPreset)
     {
         current = currentPreset;
         group = jmax (0, currentPreset) / ps::presetsPerGroup;
         setVisible (true);
-        toFront (false);
+        toFront (true);
+        grabKeyboardFocus();
         repaint();
+    }
+
+    bool keyPressed (const KeyPress& k) override
+    {
+        if (k != KeyPress::escapeKey) return false;
+        setVisible (false);
+        return true;
     }
 
     void paint (Graphics& g) override
     {
-        const auto b = getLocalBounds().toFloat();
+        g.fillAll (Colours::black.withAlpha (0.35f));
+        g.setOrigin (boxX, boxY);
+        const Rectangle<float> b (0.0f, 0.0f, (float) boxW, (float) boxH);
         g.setColour (Colours::black.withAlpha (0.5f)); g.fillRoundedRectangle (b.translated (0, 12), 12);
         g.setColour (Colour (0xf7080809)); g.fillRoundedRectangle (b, 12);
         g.setColour (col::line.withAlpha (0.45f)); g.drawRoundedRectangle (b.reduced (0.5f), 12, 1);
@@ -1039,27 +1053,29 @@ public:
         }
     }
 
-    void mouseMove (const MouseEvent& e) override
+    void mouseMove (const MouseEvent& ev) override
     {
+        const auto pos = ev.position - Point<float> ((float) boxX, (float) boxY);
         int h = -1;
         for (int i = 0; i < ps::presetsPerGroup; ++i)
-            if (presetRect (i).contains (e.position)) h = group * ps::presetsPerGroup + i;
+            if (presetRect (i).contains (pos)) h = group * ps::presetsPerGroup + i;
         if (h != hoverIdx) { hoverIdx = h; repaint(); }
     }
 
     void mouseExit (const MouseEvent&) override { if (hoverIdx >= 0) { hoverIdx = -1; repaint(); } }
 
-    void mouseDown (const MouseEvent& e) override
+    void mouseDown (const MouseEvent& ev) override
     {
-        if (closeRect().contains (e.position)) { setVisible (false); return; }
+        const auto pos = ev.position - Point<float> ((float) boxX, (float) boxY);
+        if (closeRect().contains (pos) || ! Rectangle<float> (0.0f, 0.0f, (float) boxW, (float) boxH).contains (pos)) { setVisible (false); return; }
         for (int i = 0; i < ps::numGroups; ++i)
-            if (groupRect (i).contains (e.position)) { group = i; repaint(); return; }
+            if (groupRect (i).contains (pos)) { group = i; repaint(); return; }
         for (int i = 0; i < ps::presetsPerGroup; ++i)
-            if (presetRect (i).contains (e.position))
+            if (presetRect (i).contains (pos))
             {
                 current = group * ps::presetsPerGroup + i;
+                setVisible (false);
                 if (onPick) onPick (current);
-                repaint();
                 return;
             }
     }
@@ -1067,7 +1083,7 @@ public:
 private:
     Rectangle<float> groupRect (int i) const  { return { 0, 16.0f + (float) i * 35.0f, 210, 35 }; }
     Rectangle<float> presetRect (int i) const { return { 230.0f + (float) (i % 2) * 333.0f, 60.0f + (float) (i / 2) * 58.0f, 325, 50 }; }
-    Rectangle<float> closeRect() const        { return { (float) getWidth() - 50.0f, 16, 30, 30 }; }
+    Rectangle<float> closeRect() const        { return { (float) boxW - 50.0f, 16, 30, 30 }; }
 
     int group = 0, current = -1, hoverIdx = -1;
 };
@@ -1134,7 +1150,7 @@ public:
         // M/S only: the Transient and Sustain knobs edit the Mid or the Side channel
         tabMid.setBounds (526, 468, 68, 22); tabSide.setBounds (606, 468, 68, 22);   // centred under the display (x 300 to 900)
         tabMid.setClickingTogglesState (false); tabSide.setClickingTogglesState (false);
-        tabMid.setTitle ("Edit the Mid channel"); tabSide.setTitle ("Edit the Side channel");
+        tabMid.setTitle ("Edit the Mid channel (Stereo M/S)"); tabSide.setTitle ("Edit the Side channel (Stereo M/S)");
         tabMid.onClick  = [this] { setMsTab (0); };
         tabSide.onClick = [this] { setMsTab (1); };
         setMsTab (0);
@@ -1147,7 +1163,7 @@ public:
         presetNext.onClick = [this] { pickPreset ((proc.currentPreset.load() + 1) % ps::numPresets); };
         presetWin.onClick  = [this] { browser.show (proc.currentPreset.load()); };
         addChildComponent (browser);
-        browser.setBounds (150, 190, 900, 430);
+        browser.setBounds (0, 0, 1200, 760);   // covers the panel; draws its box at (boxX, boxY)
         browser.onPick = [this] (int i) { pickPreset (i); };
 
         abA.setClickingTogglesState (false); abB.setClickingTogglesState (false);
@@ -1229,12 +1245,16 @@ public:
     }
 
 private:
-    // The Transient and Sustain knobs follow the tab; L/R mode always edits the shared (Mid) pair
+    // The Transient and Sustain knobs follow the tab; L/R mode always edits the shared pair (shown as MID)
     void setMsTab (int t)
     {
         msTab = t;
         const bool ms = proc.apvts.getRawParameterValue (ps::id::msMode)->load() > 0.5f, side = ms && t == 1;
-        tabMid.setVisible (ms); tabSide.setVisible (ms);
+        for (auto* b : { &tabMid, &tabSide })   // always shown; greyed out until Stereo is set to M/S
+        {
+            b->setEnabled (ms);
+            b->setAlpha (ms ? 1.0f : 0.35f);
+        }
         tabMid.setToggleState (! side, dontSendNotification);
         tabSide.setToggleState (side, dontSendNotification);
         transKnob->bind (proc.apvts.getParameter (side ? ps::id::transSide : ps::id::trans));
@@ -1244,7 +1264,7 @@ private:
     void pickPreset (int i)
     {
         proc.loadPreset (i);
-        if (browser.isVisible()) browser.show (i);
+
     }
 
     void syncAB()
